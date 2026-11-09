@@ -1,0 +1,19 @@
+Third-party software included in the WhatsApp MCP installer
+===========================================================
+
+whatsmeow (go.mau.fi/whatsmeow) - Mozilla Public License 2.0
+  https://github.com/tulir/whatsmeow - source: https://github.com/tulir/whatsmeow
+
+PostgreSQL 17 (Windows binaries packaged by zonky embedded-postgres-binaries)
+  PostgreSQL License - https://www.postgresql.org/about/licence/
+  https://github.com/zonkyio/embedded-postgres-binaries
+  Bundled libraries: OpenSSL (Apache 2.0), ICU (Unicode License), libxml2 and
+  libxslt (MIT), zlib (zlib), lz4 (BSD), zstd (BSD), gettext/libintl (LGPL),
+  libiconv (LGPL), libcurl (curl license).
+
+Microsoft Visual C++ Redistributable runtime (vcruntime140.dll,
+vcruntime140_1.dll, msvcp140.dll) - redistributed under the Visual Studio
+redistribution terms.
+
+Go libraries: pgx (MIT), modernc.org/sqlite (BSD-3), MCP Go SDK (MIT),
+golang.org/x/sys (BSD-3), qrterminal (MIT).
