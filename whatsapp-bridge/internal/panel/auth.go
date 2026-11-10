@@ -15,7 +15,7 @@ import (
 const (
 	cookieName   = "wmcp_panel"
 	sessionTTL   = 12 * time.Hour
-	loginLinkTTL = 2 * time.Minute
+	loginLinkTTL = 10 * time.Minute
 )
 
 type session struct {
@@ -88,7 +88,8 @@ func setCookie(w http.ResponseWriter, id string, maxAge int) {
 
 // CreateLoginLink stores a one-time token that opens the panel without the
 // access key. Only an administrator on the server can read the database
-// settings, so only they can make one. It is valid for two minutes.
+// settings, so only they can make one. It is valid for ten minutes and is
+// spent only when the panel page itself sends it back (see linkLogin).
 func CreateLoginLink(ctx context.Context, d *sql.DB) (string, error) {
 	t := randomHex(24)
 	_, err := d.ExecContext(ctx, `DELETE FROM panel_login WHERE expires_at < now() - interval '1 day'`)
@@ -111,6 +112,14 @@ func useLoginLink(ctx context.Context, d *sql.DB, t string) bool {
 	}
 	n, _ := res.RowsAffected()
 	return n == 1
+}
+
+// LinkUsed reports whether the panel page has already used the token, so the
+// "panel" command knows the browser really opened it.
+func LinkUsed(ctx context.Context, d *sql.DB, t string) bool {
+	var used bool
+	err := d.QueryRowContext(ctx, `SELECT used_at IS NOT NULL FROM panel_login WHERE token_hash = $1`, hashToken(t)).Scan(&used)
+	return err == nil && used
 }
 
 // limiter slows down guessing of the access key on the login form.

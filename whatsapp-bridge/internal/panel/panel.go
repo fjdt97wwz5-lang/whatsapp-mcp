@@ -129,6 +129,9 @@ func (p *Panel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/panel/", http.StatusFound)
 		return
 	case path == "/login":
+		p.linkPage(w, r)
+		return
+	case path == "/api/login-link":
 		p.linkLogin(w, r)
 		return
 	case path == "/api/login":
@@ -144,19 +147,48 @@ func (p *Panel) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p.static.ServeHTTP(w, r)
 }
 
+// linkPage serves the page the one-time link opens. The token travels in
+// the address after "#", which browsers never send to the server, so nothing
+// that merely fetches the address (a preview, a scanner) can spend it; the
+// page's own script sends it with linkLogin.
+func (p *Panel) linkPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	b, err := staticFS.ReadFile("static/login.html")
+	if err != nil {
+		http.Error(w, "no disponible", http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = w.Write(b)
+}
+
+// linkLogin spends a one-time link sent by the link page and opens a session.
 func (p *Panel) linkLogin(w http.ResponseWriter, r *http.Request) {
-	if !clientIP(r).IsLoopback() || !useLoginLink(r.Context(), p.d.Store.DB, r.URL.Query().Get("t")) {
-		http.Redirect(w, r, "/panel/#login-vencido", http.StatusFound)
+	if r.Method != http.MethodPost {
+		fail(w, http.StatusMethodNotAllowed, "método no permitido")
+		return
+	}
+	if o := r.Header.Get("Origin"); o == "" || !strings.HasSuffix(o, "//"+r.Host) {
+		fail(w, http.StatusForbidden, "origen no permitido")
+		return
+	}
+	var body struct {
+		T string `json:"t"`
+		S string `json:"s"`
+	}
+	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
+	if !clientIP(r).IsLoopback() || !useLoginLink(r.Context(), p.d.Store.DB, body.T) {
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "target": "/panel/#login-vencido"})
 		return
 	}
 	id, _ := p.sessions.create(false)
 	setCookie(w, id, int(sessionTTL.Seconds()))
 	p.d.Policy.Audit(r.Context(), policy.ActorPanel, "panel.login", "", "ok", map[string]any{"method": "link"})
 	target := "/panel/"
-	if sec := r.URL.Query().Get("s"); sec != "" && validSection(sec) {
-		target += "#" + sec
+	if validSection(body.S) {
+		target += "#" + body.S
 	}
-	http.Redirect(w, r, target, http.StatusFound)
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "target": target})
 }
 
 func validSection(s string) bool {

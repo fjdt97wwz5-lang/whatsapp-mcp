@@ -24,6 +24,19 @@ by Claude through MCP tools. Settings marked hand-only (`send_only_to_approved`,
 `mcp_can_change_settings`, `cloud_access_enabled`, `panel_remote`) cannot be
 changed through MCP.
 
+## 2.0.3
+
+- The panel shortcut and the installer's "Abrir el panel ahora" open the
+  browser again. An elevated process that hands a web address to
+  explorer.exe only gets File Explorer, so the address now goes into a
+  private `.url` shortcut that explorer.exe opens as the signed-in user.
+- If the panel page does not use the link within 12 seconds, a small window
+  shows the address with a "Copiar" button (and the console prints it); it
+  closes by itself once the panel opens.
+- The one-time token travels after `#` and is spent only by the panel page's
+  own script (`POST /panel/api/login-link`, same origin only), so anything
+  that merely fetches the address cannot use it up. It now lasts 10 minutes.
+
 ## 2.0.2
 
 - Installer fix for upgrades: before copying files it stops the services and
@@ -85,10 +98,10 @@ docs/GUIA.md             user guide (Spanish)
 ## Build
 
 ```
-installer/build.sh 2.0.2     # needs Go, makensis, python3, curl
+installer/build.sh 2.0.3     # needs Go, makensis, python3, curl
 ```
 
-Produces `dist/WhatsAppMCP-Setup-2.0.2.exe` plus macOS binaries for the
+Produces `dist/WhatsAppMCP-Setup-2.0.3.exe` plus macOS binaries for the
 `connect` helper. The installer bundles PostgreSQL 17 for Windows
 (zonky embedded-postgres-binaries, checksum-pinned) and the MSVC runtime DLLs.
 

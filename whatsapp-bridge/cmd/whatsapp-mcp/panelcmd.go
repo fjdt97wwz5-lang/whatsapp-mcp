@@ -52,15 +52,67 @@ func cmdPanel(args []string) error {
 	if err != nil {
 		return err
 	}
-	u := fmt.Sprintf("http://127.0.0.1:%d/panel/login?t=%s", cfg.ListenPort, tok)
+	// The token goes after "#": browsers never send that part to the server,
+	// so only the panel page itself can spend it.
+	u := fmt.Sprintf("http://127.0.0.1:%d/panel/login#t=%s", cfg.ListenPort, tok)
 	if *open != "" {
 		u += "&s=" + *open
 	}
-	if err := wa.OpenInBrowser(u); err != nil {
-		fmt.Println("No pude abrir el navegador. Abre esta dirección en este servidor (vale 2 minutos, una sola vez):")
-		fmt.Println(u)
+	used := func() bool {
+		c, cl := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cl()
+		return panel.LinkUsed(c, d, tok)
+	}
+
+	fmt.Println("Abriendo el panel en tu navegador…")
+	cleanup, oerr := wa.OpenURL(u)
+	defer cleanup()
+	if oerr == nil {
+		for end := time.Now().Add(12 * time.Second); time.Now().Before(end); time.Sleep(time.Second) {
+			if used() {
+				fmt.Println("Panel abierto en el navegador.")
+				return nil
+			}
+		}
+	}
+
+	fmt.Println("El navegador no abrió el panel. Copia esta dirección y pégala en Chrome o Edge en este servidor (vale 10 minutos, una sola vez):")
+	fmt.Println()
+	fmt.Println("  " + u)
+	fmt.Println()
+	win, werr := showLinkWindow(u)
+	if werr != nil {
+		fmt.Print("Cuando se abra el panel, esta ventana se cierra sola. También puedes presionar Enter.")
+		enter := make(chan struct{})
+		go func() { fmt.Scanln(); close(enter) }()
+		for end := time.Now().Add(10 * time.Minute); time.Now().Before(end); {
+			select {
+			case <-enter:
+				return nil
+			case <-time.After(time.Second):
+				if used() {
+					fmt.Println("\nPanel abierto en el navegador.")
+					return nil
+				}
+			}
+		}
 		return nil
 	}
-	fmt.Println("Panel abierto en el navegador.")
+	fmt.Println("También está en la ventanita con el botón Copiar.")
+	done := make(chan struct{})
+	go func() { _ = win.Wait(); close(done) }()
+	for end := time.Now().Add(10 * time.Minute); time.Now().Before(end); {
+		select {
+		case <-done:
+			return nil
+		case <-time.After(time.Second):
+			if used() {
+				_ = win.Process.Kill()
+				fmt.Println("Panel abierto en el navegador.")
+				return nil
+			}
+		}
+	}
+	_ = win.Process.Kill()
 	return nil
 }

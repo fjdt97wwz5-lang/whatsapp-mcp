@@ -1,4 +1,4 @@
-WhatsApp MCP 2.0.2 - Guía rápida
+WhatsApp MCP 2.0.3 - Guía rápida
 ================================
 
 Qué es
@@ -16,6 +16,16 @@ pide permiso de administrador).
 
 Usa un número secundario si puedes: WhatsApp no permite oficialmente este
 tipo de conexiones y podría bloquear el número.
+
+Novedades de la 2.0.3
+---------------------
+- "Panel de WhatsApp MCP" abre el panel en tu navegador. Antes, en algunos
+  equipos solo abría el Explorador de archivos.
+- Si el navegador no se abre en unos segundos, sale una ventanita con la
+  dirección y un botón "Copiar": pégala en Chrome o Edge en el servidor.
+  La ventanita se cierra sola cuando el panel abre.
+- El enlace vale 10 minutos y una sola vez, y solo se gasta cuando la página
+  del panel carga de verdad.
 
 Novedades de la 2.0.2
 ---------------------
@@ -42,7 +52,7 @@ Novedades de la 2.0.1
 
 1. Instalar o actualizar en el servidor Windows
 -----------------------------------------------
-1. Copia WhatsAppMCP-Setup-2.0.2.exe al servidor y ábrelo.
+1. Copia WhatsAppMCP-Setup-2.0.3.exe al servidor y ábrelo.
    Windows puede avisar "Windows protegió su PC" porque el instalador no
    está firmado: "Más información" > "Ejecutar de todas formas".
 2. Acepta el permiso de administrador y sigue los pasos.
@@ -78,8 +88,9 @@ El panel solo abre en el propio servidor. Si quieres abrirlo desde otro
 equipo de tu Tailscale, enciende "Panel desde otros equipos" en Ajustes y
 entra con la clave de acceso (la de Conectar Claude).
 
-El enlace del menú Inicio vale una sola vez y por 2 minutos. Si ves "El
-enlace ya se usó", vuelve a abrirlo desde el menú Inicio.
+El enlace del menú Inicio vale una sola vez y por 10 minutos. Si el
+navegador no se abre, sale una ventanita con la dirección y el botón
+"Copiar". Si ves "El enlace ya se usó", vuelve a abrirlo desde el menú Inicio.
 
 
 3. Vincular WhatsApp
