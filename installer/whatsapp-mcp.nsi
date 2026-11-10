@@ -3,7 +3,7 @@
 
 Unicode true
 !ifndef VERSION
-  !define VERSION "2.0.1"
+  !define VERSION "2.0.2"
 !endif
 !ifndef STAGE
   !define STAGE "stage"
@@ -82,11 +82,48 @@ Function RunPair
   Exec '"$INSTDIR\${EXE}" panel --pause-on-error'
 FunctionEnd
 
-; Services must be stopped before their files can be replaced.
+; Services must be stopped before their files can be replaced. The script
+; waits until Windows reports them as stopped (60 s at most), closes any
+; whatsapp-mcp.exe still running (an open Panel or Vincular window) and the
+; database processes from the install folder, then checks the exe is free.
 !macro StopServices
-  DetailPrint "Deteniendo los servicios de ${APP} (si estaban corriendo)..."
-  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "Stop-Service -Name WhatsAppMCP -Force -ErrorAction SilentlyContinue; Stop-Service -Name WhatsAppMCP-Postgres -Force -ErrorAction SilentlyContinue"'
+  DetailPrint "Deteniendo los servicios de ${APP} y esperando a que se apaguen..."
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\stop-services.ps1" "${STAGE}\stop-services.ps1"
+  nsExec::ExecToLog 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\stop-services.ps1" -InstallDir "$INSTDIR" -Timeout 60'
   Pop $0
+!macroend
+
+; Copies whatsapp-mcp.exe, retrying while Windows still holds the old one.
+; Last resort: a running exe can be renamed, so the old one is moved aside
+; and deleted later; only then does NSIS show its own Retry dialog.
+!macro PlaceExe
+  StrCpy $R1 0
+  ${Do}
+    ClearErrors
+    SetOverwrite try
+    File "${STAGE}\${EXE}"
+    ${IfNot} ${Errors}
+      ${Break}
+    ${EndIf}
+    IntOp $R1 $R1 + 1
+    ${If} $R1 >= 5
+      DetailPrint "El programa sigue en uso; se aparta la versión anterior."
+      Delete "$INSTDIR\${EXE}.old"
+      ClearErrors
+      Rename "$INSTDIR\${EXE}" "$INSTDIR\${EXE}.old"
+      ClearErrors
+      SetOverwrite on
+      File "${STAGE}\${EXE}"
+      ${Break}
+    ${EndIf}
+    DetailPrint "El programa sigue en uso, reintento $R1 de 4..."
+    nsExec::ExecToLog 'taskkill.exe /F /IM ${EXE} /T'
+    Pop $0
+    Sleep 2000
+  ${Loop}
+  SetOverwrite on
+  Delete /REBOOTOK "$INSTDIR\${EXE}.old"
 !macroend
 
 Section "Instalar"
@@ -94,7 +131,7 @@ Section "Instalar"
   !insertmacro StopServices
 
   SetOutPath "$INSTDIR"
-  File "${STAGE}\${EXE}"
+  !insertmacro PlaceExe
   File "${STAGE}\GUIA.txt"
   File "${STAGE}\LICENSE.txt"
   File "${STAGE}\THIRD-PARTY.txt"
@@ -109,6 +146,11 @@ Section "Instalar"
     MessageBox MB_ICONEXCLAMATION "La configuración no terminó bien (código $0).$\r$\n$\r$\nRevisa los detalles de esta ventana. Puedes volver a ejecutar el instalador: no borra nada."
     DetailPrint "Error en la configuración (código $0)."
   ${EndIf}
+
+  ; Make sure both services are running again, even if the step above failed.
+  DetailPrint "Arrancando los servicios de ${APP}..."
+  nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command "foreach ($$n in @('WhatsAppMCP-Postgres','WhatsAppMCP')) { $$s = Get-Service -Name $$n -ErrorAction SilentlyContinue; if ($$s -and $$s.Status -ne 'Running') { Start-Service -Name $$n -ErrorAction SilentlyContinue; try { $$s.WaitForStatus('Running', [TimeSpan]::FromSeconds(60)) } catch {} }; if ($$s) { $$s.Refresh(); Write-Output ($$n + ': ' + $$s.Status) } }"`
+  Pop $0
 
   RMDir /r "$SMPROGRAMS\${APP}"
   CreateDirectory "$SMPROGRAMS\${APP}"
@@ -140,9 +182,14 @@ Section "Uninstall"
   keep:
   nsExec::ExecToLog '"$INSTDIR\${EXE}" uninstall$1'
   Pop $0
+  ; Close any Panel or Vincular window still open so the exe can be deleted.
+  nsExec::ExecToLog 'taskkill.exe /F /IM ${EXE} /T'
+  Pop $0
+  Sleep 1000
 
   RMDir /r "$INSTDIR\pgsql"
-  Delete "$INSTDIR\${EXE}"
+  Delete /REBOOTOK "$INSTDIR\${EXE}"
+  Delete "$INSTDIR\${EXE}.old"
   Delete "$INSTDIR\GUIA.txt"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\THIRD-PARTY.txt"

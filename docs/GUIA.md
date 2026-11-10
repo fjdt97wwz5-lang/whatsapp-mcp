@@ -1,4 +1,4 @@
-WhatsApp MCP 2.0.1 - Guía rápida
+WhatsApp MCP 2.0.2 - Guía rápida
 ================================
 
 Qué es
@@ -17,6 +17,14 @@ pide permiso de administrador).
 Usa un número secundario si puedes: WhatsApp no permite oficialmente este
 tipo de conexiones y podría bloquear el número.
 
+Novedades de la 2.0.2
+---------------------
+- Al actualizar, el instalador apaga el servicio y espera a que se detenga
+  de verdad, cierra las ventanas de WhatsApp MCP que sigan abiertas (Panel,
+  Vincular) y reintenta copiar el programa. Ya no sale el error "Error
+  abriendo archivo para escritura". Al terminar vuelve a arrancar el servicio.
+- Todo lo demás es igual que en la 2.0.1.
+
 Novedades de la 2.0.1
 ---------------------
 - Panel web en el navegador (reemplaza la ventana negra, que queda como
@@ -34,7 +42,7 @@ Novedades de la 2.0.1
 
 1. Instalar o actualizar en el servidor Windows
 -----------------------------------------------
-1. Copia WhatsAppMCP-Setup-2.0.1.exe al servidor y ábrelo.
+1. Copia WhatsAppMCP-Setup-2.0.2.exe al servidor y ábrelo.
    Windows puede avisar "Windows protegió su PC" porque el instalador no
    está firmado: "Más información" > "Ejecutar de todas formas".
 2. Acepta el permiso de administrador y sigue los pasos.

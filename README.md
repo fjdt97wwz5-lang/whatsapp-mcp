@@ -24,6 +24,15 @@ by Claude through MCP tools. Settings marked hand-only (`send_only_to_approved`,
 `mcp_can_change_settings`, `cloud_access_enabled`, `panel_remote`) cannot be
 changed through MCP.
 
+## 2.0.2
+
+- Installer fix for upgrades: before copying files it stops the services and
+  waits (up to 60 s) until Windows reports them stopped, closes any
+  `whatsapp-mcp.exe` still running (an open Panel or Vincular window) and the
+  bundled Postgres processes, retries the exe copy (moving a locked one aside
+  as a last resort), and starts both services again at the end
+  (`installer/stop-services.ps1`). No app changes since 2.0.1.
+
 ## 2.0.1
 
 - **Web panel** at `http://127.0.0.1:8765/panel/` (Spanish): status banner, QR /
@@ -76,10 +85,10 @@ docs/GUIA.md             user guide (Spanish)
 ## Build
 
 ```
-installer/build.sh 2.0.1     # needs Go, makensis, python3, curl
+installer/build.sh 2.0.2     # needs Go, makensis, python3, curl
 ```
 
-Produces `dist/WhatsAppMCP-Setup-2.0.1.exe` plus macOS binaries for the
+Produces `dist/WhatsAppMCP-Setup-2.0.2.exe` plus macOS binaries for the
 `connect` helper. The installer bundles PostgreSQL 17 for Windows
 (zonky embedded-postgres-binaries, checksum-pinned) and the MSVC runtime DLLs.
 

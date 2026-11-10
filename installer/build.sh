@@ -4,7 +4,7 @@
 # Usage: installer/build.sh [VERSION]   -> dist/
 set -euo pipefail
 
-VERSION="${1:-2.0.1}"
+VERSION="${1:-2.0.2}"
 PG_VERSION="17.11.0"
 PG_JAR_SHA256="98040fae18dd9633ff95932125b0cecf0a45a1a9312e216e2a33ad03a31d4251"
 VC_VERSION="14.51.36231"
@@ -58,6 +58,7 @@ crlf() { sed 's/$/\r/' "$1" > "$2"; }
 crlf "$ROOT/docs/GUIA.md" "$STAGE/GUIA.txt"
 crlf "$ROOT/LICENSE" "$STAGE/LICENSE.txt"
 crlf "$ROOT/installer/THIRD-PARTY.txt" "$STAGE/THIRD-PARTY.txt"
+crlf "$ROOT/installer/stop-services.ps1" "$STAGE/stop-services.ps1"
 
 # 5. Installer.
 makensis -V2 -DVERSION="$VERSION" -DSTAGE="$STAGE" -DOUTFILE="$DIST/WhatsAppMCP-Setup-$VERSION.exe" "$ROOT/installer/whatsapp-mcp.nsi"
