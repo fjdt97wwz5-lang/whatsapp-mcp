@@ -38,7 +38,8 @@ func init() {
 		{"audit", "audit [--limit 50] [--action message.send]", "Registro de envíos y cambios.", cmdAudit, false},
 		{"connection-info", "connection-info", "Muestra cómo conectar Claude desde tu Mac por Tailscale.", cmdConnectionInfo, false},
 		{"rotate-token", "rotate-token", "Genera una clave nueva (la anterior deja de funcionar).", cmdRotateToken, false},
-		{"menu", "menu", "Menú sencillo para hacer todo lo anterior.", cmdMenu, false},
+		{"panel", "panel [--open vincular|conversaciones|lista|ajustes|registro|conectar]", "Abre el panel web en el navegador de este servidor.", cmdPanel, false},
+		{"menu", "menu", "Menú en modo texto para hacer todo lo anterior.", cmdMenu, false},
 		{"connect", "connect --url http://IP:8765/mcp  (clave en WHATSAPP_MCP_TOKEN)", "Para la Mac: conecta Claude Desktop (stdio) con el servidor.", cmdConnect, true},
 		{"version", "version", "Muestra la versión.", cmdVersion, true},
 	}
@@ -63,11 +64,16 @@ func main() {
 		}
 	}
 	// --pause keeps the window open at the end (Start Menu shortcuts).
-	pause := false
+	// --pause-on-error only when something went wrong (the panel shortcut).
+	pause, pauseOnError := false, false
 	kept := args[:0:0]
 	for _, a := range args {
 		if a == "--pause" {
 			pause = true
+			continue
+		}
+		if a == "--pause-on-error" {
+			pauseOnError = true
 			continue
 		}
 		kept = append(kept, a)
@@ -87,7 +93,11 @@ func main() {
 			// server every command except the Mac ones needs elevation.
 			if runtime.GOOS == "windows" && !c.noAdmin && !isAdmin() && !isService() {
 				fmt.Println("Hace falta permiso de administrador; Windows te lo va a pedir...")
-				if err := relaunchElevated(args); err != nil {
+				pauseFlag := "--pause"
+				if name == "panel" {
+					pauseFlag = "--pause-on-error"
+				}
+				if err := relaunchElevated(args, pauseFlag); err != nil {
 					fmt.Fprintln(os.Stderr, "Error:", err)
 					os.Exit(1)
 				}
@@ -97,7 +107,7 @@ func main() {
 			if err != nil {
 				fmt.Fprintln(os.Stderr, "Error:", err)
 			}
-			if pause {
+			if pause || (pauseOnError && err != nil) {
 				fmt.Print("\nPresiona Enter para cerrar esta ventana...")
 				fmt.Scanln()
 			}

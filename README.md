@@ -19,9 +19,39 @@ Spanish user guide: [docs/GUIA.md](docs/GUIA.md).
 | No record of actions | Audit log of sends (including refused ones), settings and list changes, downloads, pairing |
 | Message text passed to the model as-is | Read tools mark message content as untrusted; send tools are annotated as destructive |
 
-Settings live in the database and can be changed by hand (CLI/menu) or by Claude
-through MCP tools. `send_only_to_approved` and `mcp_can_change_settings` can only
-be changed by hand.
+Settings live in the database and can be changed by hand (web panel, CLI/menu) or
+by Claude through MCP tools. Settings marked hand-only (`send_only_to_approved`,
+`mcp_can_change_settings`, `cloud_access_enabled`, `panel_remote`) cannot be
+changed through MCP.
+
+## 2.0.1
+
+- **Web panel** at `http://127.0.0.1:8765/panel/` (Spanish): status banner, QR /
+  8-character pairing inside the page, conversations with search and filters and
+  an "Aprobar" button per chat, approved list (flag selector, phone masks, Title
+  Case names), settings as switches, audit log, connection info, history import.
+  Opened from the Start menu with a one-time link (2 min, single use, loopback
+  only, created by an elevated `whatsapp-mcp panel`); otherwise login with the
+  access key (rate limited). Session cookie is HttpOnly + SameSite=Strict,
+  changes need a CSRF token, strict CSP. Other Tailscale devices only when
+  `panel_remote` is on.
+- **Follow-up data**: per-chat category (editable list in `chat_categories`) and
+  country (the phone prefix is only shown as a suggestion), "unanswered" filter.
+  New MCP tools: `list_conversations`, `list_unanswered_chats`,
+  `get_chat_categories`, `set_chat_category`, `set_chat_country`,
+  `get_chat_transcript`.
+- **Cloud access via Tailscale Funnel**: a separate listener on
+  `127.0.0.1:8767` that serves only MCP, only while `cloud_access_enabled` is on,
+  only with a separate cloud key (`/mcp/k/<key>` for claude.ai custom connectors,
+  or Bearer). Rate limited, wrong keys throttled and logged, calls audited as
+  `cloud`. The panel can publish/withdraw it (`tailscale funnel --bg
+  --https=10000 http://127.0.0.1:8767`) and refuses to touch a Funnel port that
+  another app already uses. The panel and the REST API are never reachable there.
+- QR fix: the console QR was taller than a default console window; pairing now
+  also writes a self-refreshing HTML page and the panel shows it at full size.
+- Health endpoint and `status` report linked / connected / number / last
+  connection. After a logout from the phone the service prepares a new device so
+  it can be linked again without a restart.
 
 ## Layout
 
@@ -33,8 +63,9 @@ whatsapp-bridge/
   internal/store         chats and messages
   internal/policy        settings, approved list, rate limit, attachment rules, audit log
   internal/wa            whatsmeow client, history sync, media, sending, filename sanitizing
-  internal/mcptools      MCP tools (19)
-  internal/httpapi       HTTP server: network + token guard, /mcp, /api/*
+  internal/mcptools      MCP tools (25)
+  internal/httpapi       HTTP server: network + token guard, /mcp, /api/*, /panel; cloud (Funnel) listener
+  internal/panel         web panel (embedded static files, login links, JSON API)
   internal/pgsetup       creates and registers the private PostgreSQL
   internal/sqlitemigrate imports the old messages.db
   internal/proxy         stdio <-> HTTP bridge for Claude Desktop on another machine
@@ -45,10 +76,10 @@ docs/GUIA.md             user guide (Spanish)
 ## Build
 
 ```
-installer/build.sh 2.0.0     # needs Go, makensis, python3, curl
+installer/build.sh 2.0.1     # needs Go, makensis, python3, curl
 ```
 
-Produces `dist/WhatsAppMCP-Setup-2.0.0.exe` plus macOS binaries for the
+Produces `dist/WhatsAppMCP-Setup-2.0.1.exe` plus macOS binaries for the
 `connect` helper. The installer bundles PostgreSQL 17 for Windows
 (zonky embedded-postgres-binaries, checksum-pinned) and the MSVC runtime DLLs.
 
@@ -56,7 +87,8 @@ Produces `dist/WhatsAppMCP-Setup-2.0.0.exe` plus macOS binaries for the
 
 `whatsapp-mcp help` lists them: `install`, `uninstall [--purge]`, `pair [--phone]`,
 `unlink`, `status`, `migrate-sqlite --from messages.db`, `settings [set K V]`,
-`allow list|add|remove`, `audit`, `connection-info`, `rotate-token`, `menu`,
+`allow list|add|remove`, `audit`, `connection-info`, `rotate-token`,
+`panel [--open section]`, `menu`,
 `connect --url` (client side), `version`.
 
 ## Tests

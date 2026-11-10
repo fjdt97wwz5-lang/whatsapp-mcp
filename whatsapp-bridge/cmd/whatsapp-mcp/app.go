@@ -16,6 +16,7 @@ import (
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/httpapi"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/logx"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/mcptools"
+	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/panel"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/policy"
 	mstore "github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/store"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/version"
@@ -138,10 +139,21 @@ func serve(ctx context.Context, cfgPath string, console io.Writer) error {
 		}
 	}()
 	defer b.Stop()
-	srv, err := httpapi.New(a.cfg, mcptools.NewServer(mcptools.Deps{Store: a.store, Policy: a.policy, Bridge: b}), b, a.policy, a.log.Sub("HTTP"))
+	if changed, err := a.cfg.EnsureCloudKey(); err != nil {
+		return err
+	} else if changed {
+		if err := a.cfg.Save(a.cfg.Path()); err != nil {
+			a.log.Warnf("could not save the new cloud key: %v", err)
+		}
+	}
+	cloud := httpapi.NewCloud(a.cfg, mcptools.NewServer(mcptools.Deps{Store: a.store, Policy: a.policy, Bridge: b, Actor: policy.ActorCloud}), a.policy, a.log.Sub("Cloud"))
+	pnl := panel.New(panel.Deps{Cfg: a.cfg, Store: a.store, Policy: a.policy, Bridge: b, Log: a.log.Sub("Panel"),
+		TailscaleIPs: httpapi.TailscaleIPs, Cloud: cloud})
+	srv, err := httpapi.New(a.cfg, mcptools.NewServer(mcptools.Deps{Store: a.store, Policy: a.policy, Bridge: b}), b, a.policy, pnl, a.log.Sub("HTTP"))
 	if err != nil {
 		return err
 	}
+	go cloud.Run(ctx)
 	a.policy.Audit(ctx, policy.ActorSystem, "service.start", "", "ok", map[string]any{"version": version.Version})
 	srv.Run(ctx)
 	a.log.Infof("Stopping")

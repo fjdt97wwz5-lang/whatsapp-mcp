@@ -17,13 +17,13 @@ func isAdmin() bool {
 
 // relaunchElevated starts this program again "as administrator" (the UAC
 // prompt) in a new window, with --pause so its output stays readable.
-func relaunchElevated(args []string) error {
+func relaunchElevated(args []string, pauseFlag string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err
 	}
 	quoted := make([]string, 0, len(args)+1)
-	for _, a := range append(args, "--pause") {
+	for _, a := range append(args, pauseFlag) {
 		quoted = append(quoted, syscall.EscapeArg(a))
 	}
 	verb, _ := windows.UTF16PtrFromString("runas")

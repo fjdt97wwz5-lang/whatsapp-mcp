@@ -63,6 +63,12 @@ var Defs = []Def{
 		Description: "Also store the text of sent messages in the audit log (off = only length)."},
 	{Key: "download_media_enabled", Kind: Bool, Default: true,
 		Description: "Allow downloading received photos, audios, videos and documents to the media folder."},
+	{Key: "chat_categories", Kind: String, Default: "Cliente, Distribuidor, Proveedor, Personal, Otro",
+		Description: "Categories you can give to each chat, separated by commas."},
+	{Key: "cloud_access_enabled", Kind: Bool, Default: false, LockedFromMCP: true,
+		Description: "Let Claude in the cloud reach the connector through Tailscale Funnel (needs the cloud key). Off = only Tailscale devices."},
+	{Key: "panel_remote", Kind: Bool, Default: false, LockedFromMCP: true,
+		Description: "Allow opening the web panel from other Tailscale devices (login with the access key). Off = only on the server itself."},
 }
 
 // DefByKey finds a definition.
@@ -86,12 +92,17 @@ type Settings struct {
 	MCPCanChangeSettings  bool   `json:"mcp_can_change_settings"`
 	AuditMessageText      bool   `json:"audit_message_text"`
 	DownloadMediaEnabled  bool   `json:"download_media_enabled"`
+	PanelRemote           bool   `json:"panel_remote"`
+	ChatCategories        string `json:"chat_categories"`
+	CloudAccessEnabled    bool   `json:"cloud_access_enabled"`
 }
 
 // Actor identifies who did something, for the audit log.
 const (
 	ActorManual    = "manual"    // command line on the server
-	ActorMCP       = "claude"    // MCP tool call
+	ActorPanel     = "panel"     // web panel (by hand)
+	ActorMCP       = "claude"    // MCP tool call (Tailscale)
+	ActorCloud     = "cloud"     // MCP tool call from Claude in the cloud (Funnel)
 	ActorREST      = "rest"      // REST API caller
 	ActorInstaller = "installer" // setup
 	ActorSystem    = "system"
@@ -191,8 +202,18 @@ func (p *Policy) ListSettings(ctx context.Context) ([]SettingView, error) {
 // only the owner can change by hand.
 var ErrNotAllowedFromMCP = errors.New("this setting can only be changed by hand on the server")
 
+// IsClaude says whether the actor is Claude (over Tailscale or the cloud),
+// which the hand-only rules apply to.
+func IsClaude(actor string) bool { return actor == ActorMCP || actor == ActorCloud }
+
+// CheckClaudeChange returns an error when Claude may not change things
+// (mcp_can_change_settings is off). Other actors always pass.
+func (p *Policy) CheckClaudeChange(ctx context.Context, actor string) error {
+	return p.checkMCP(ctx, actor)
+}
+
 func (p *Policy) checkMCP(ctx context.Context, actor string) error {
-	if actor != ActorMCP {
+	if !IsClaude(actor) {
 		return nil
 	}
 	s, err := p.Settings(ctx)
@@ -244,7 +265,7 @@ func (p *Policy) SetSetting(ctx context.Context, key, text, actor string) (old, 
 	if !ok {
 		return nil, nil, fmt.Errorf("unknown setting %q", key)
 	}
-	if actor == ActorMCP && d.LockedFromMCP {
+	if IsClaude(actor) && d.LockedFromMCP {
 		p.Audit(ctx, actor, "setting.change", key, "denied", map[string]any{"reason": ErrNotAllowedFromMCP.Error(), "requested": text})
 		return nil, nil, ErrNotAllowedFromMCP
 	}
@@ -603,4 +624,18 @@ func SortedKeys(m map[string]any) []string {
 	}
 	sort.Strings(k)
 	return k
+}
+
+// Categories returns the category list from chat_categories.
+func (s Settings) Categories() []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, c := range strings.Split(s.ChatCategories, ",") {
+		c = strings.TrimSpace(c)
+		if c != "" && !seen[strings.ToLower(c)] {
+			seen[strings.ToLower(c)] = true
+			out = append(out, c)
+		}
+	}
+	return out
 }

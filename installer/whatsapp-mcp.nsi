@@ -3,7 +3,7 @@
 
 Unicode true
 !ifndef VERSION
-  !define VERSION "2.0.0"
+  !define VERSION "2.0.1"
 !endif
 !ifndef STAGE
   !define STAGE "stage"
@@ -42,12 +42,12 @@ VIAddVersionKey /LANG=1034 "LegalCopyright" "MIT"
   - Una base de datos PostgreSQL privada, solo para WhatsApp (escucha solo en 127.0.0.1).$\r$\n\
   - Un servicio de Windows que arranca solo y se reinicia si falla.$\r$\n\
   - Acceso solo por Tailscale y con una clave que se genera aquí.$\r$\n$\r$\n\
-  No se vincula ningún número de WhatsApp todavía: eso lo haces tú después con $\"Vincular WhatsApp$\".$\r$\n$\r$\n\
+  No se vincula ningún número de WhatsApp todavía: eso lo haces tú después en el panel web.$\r$\n$\r$\n\
   Si ya estaba instalado, se actualiza y se conservan los mensajes, la sesión, la clave y los ajustes."
 !define MUI_FINISHPAGE_TITLE "Instalación terminada"
-!define MUI_FINISHPAGE_TEXT "El servicio ya está corriendo.$\r$\n$\r$\nSiguiente paso: vincular tu WhatsApp (mejor un número secundario). Puedes hacerlo ahora o luego desde el menú Inicio > WhatsApp MCP > Vincular WhatsApp."
+!define MUI_FINISHPAGE_TEXT "El servicio ya está corriendo.$\r$\n$\r$\nTodo se maneja desde el panel web: menú Inicio > WhatsApp MCP > Panel de WhatsApp MCP. Ahí ves si WhatsApp está vinculado, escaneas el código QR, apruebas números desde tus conversaciones y cambias los ajustes."
 !define MUI_FINISHPAGE_RUN
-!define MUI_FINISHPAGE_RUN_TEXT "Vincular WhatsApp ahora"
+!define MUI_FINISHPAGE_RUN_TEXT "Abrir el panel ahora"
 !define MUI_FINISHPAGE_RUN_FUNCTION RunPair
 !define MUI_FINISHPAGE_SHOWREADME "$INSTDIR\GUIA.txt"
 !define MUI_FINISHPAGE_SHOWREADME_TEXT "Abrir la guía"
@@ -79,7 +79,7 @@ Function un.onInit
 FunctionEnd
 
 Function RunPair
-  Exec '"$INSTDIR\${EXE}" pair --pause'
+  Exec '"$INSTDIR\${EXE}" panel --pause-on-error'
 FunctionEnd
 
 ; Services must be stopped before their files can be replaced.
@@ -110,9 +110,11 @@ Section "Instalar"
     DetailPrint "Error en la configuración (código $0)."
   ${EndIf}
 
+  RMDir /r "$SMPROGRAMS\${APP}"
   CreateDirectory "$SMPROGRAMS\${APP}"
-  CreateShortcut "$SMPROGRAMS\${APP}\Vincular WhatsApp.lnk" "$INSTDIR\${EXE}" "pair --pause"
-  CreateShortcut "$SMPROGRAMS\${APP}\Panel de WhatsApp MCP.lnk" "$INSTDIR\${EXE}" "menu"
+  CreateShortcut "$SMPROGRAMS\${APP}\Panel de WhatsApp MCP.lnk" "$INSTDIR\${EXE}" "panel"
+  CreateShortcut "$SMPROGRAMS\${APP}\Vincular WhatsApp.lnk" "$INSTDIR\${EXE}" "panel --open vincular"
+  CreateShortcut "$SMPROGRAMS\${APP}\Panel en modo texto.lnk" "$INSTDIR\${EXE}" "menu"
   CreateShortcut "$SMPROGRAMS\${APP}\Estado.lnk" "$INSTDIR\${EXE}" "status --pause"
   CreateShortcut "$SMPROGRAMS\${APP}\Conectar desde la Mac.lnk" "$INSTDIR\${EXE}" "connection-info --pause"
   CreateShortcut "$SMPROGRAMS\${APP}\Guía.lnk" "$INSTDIR\GUIA.txt"

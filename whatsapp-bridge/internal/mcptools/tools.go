@@ -29,6 +29,16 @@ type Deps struct {
 	Store  *mstore.Store
 	Policy *policy.Policy
 	Bridge *wa.Bridge
+	// Actor is who the calls are logged as: policy.ActorMCP (Tailscale,
+	// the default) or policy.ActorCloud (Claude in the cloud via Funnel).
+	Actor string
+}
+
+func (d Deps) actor() string {
+	if d.Actor == "" {
+		return policy.ActorMCP
+	}
+	return d.Actor
 }
 
 func boolp(b bool) *bool { return &b }
@@ -61,6 +71,7 @@ func NewServer(d Deps) *mcp.Server {
 	registerRead(s, d)
 	registerSend(s, d)
 	registerAdmin(s, d)
+	registerFollowUp(s, d)
 	return s
 }
 
@@ -311,7 +322,7 @@ func registerRead(s *mcp.Server, d Deps) {
 	mcp.AddTool(s, &mcp.Tool{Name: "download_media", Annotations: &mcp.ToolAnnotations{OpenWorldHint: boolp(true)},
 		Description: "Download the photo, video, audio or document of a WhatsApp message to the server's media folder and return its path."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in downloadIn) (*mcp.CallToolResult, any, error) {
-			r, err := d.Bridge.Download(ctx, in.MessageID, in.ChatJID, policy.ActorMCP)
+			r, err := d.Bridge.Download(ctx, in.MessageID, in.ChatJID, d.actor())
 			if err != nil {
 				return errResult(err), nil, nil
 			}
@@ -354,17 +365,17 @@ func registerSend(s *mcp.Server, d Deps) {
 	mcp.AddTool(s, &mcp.Tool{Name: "send_message", Annotations: sends,
 		Description: "Send a WhatsApp text message. Only when the owner asked for it and approved the exact text. Only to approved recipients."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in sendMessageIn) (*mcp.CallToolResult, any, error) {
-			return sendOutcome(d.Bridge.Send(ctx, wa.SendRequest{Recipient: in.Recipient, Text: in.Message}, policy.ActorMCP)), nil, nil
+			return sendOutcome(d.Bridge.Send(ctx, wa.SendRequest{Recipient: in.Recipient, Text: in.Message}, d.actor())), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "send_file", Annotations: sends,
 		Description: "Send a file (picture, video, document, audio) from the server by WhatsApp. Only when the owner asked for it. Only to approved recipients."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in sendFileIn) (*mcp.CallToolResult, any, error) {
-			return sendOutcome(d.Bridge.Send(ctx, wa.SendRequest{Recipient: in.Recipient, Text: in.Caption, MediaPath: in.MediaPath}, policy.ActorMCP)), nil, nil
+			return sendOutcome(d.Bridge.Send(ctx, wa.SendRequest{Recipient: in.Recipient, Text: in.Caption, MediaPath: in.MediaPath}, d.actor())), nil, nil
 		})
 	mcp.AddTool(s, &mcp.Tool{Name: "send_audio_message", Annotations: sends,
 		Description: "Send an audio file as a WhatsApp voice note. Only when the owner asked for it. Only to approved recipients."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in sendAudioIn) (*mcp.CallToolResult, any, error) {
-			return sendOutcome(d.Bridge.Send(ctx, wa.SendRequest{Recipient: in.Recipient, MediaPath: in.MediaPath, VoiceNote: true}, policy.ActorMCP)), nil, nil
+			return sendOutcome(d.Bridge.Send(ctx, wa.SendRequest{Recipient: in.Recipient, MediaPath: in.MediaPath, VoiceNote: true}, d.actor())), nil, nil
 		})
 }
 
@@ -405,7 +416,7 @@ func registerAdmin(s *mcp.Server, d Deps) {
 	mcp.AddTool(s, &mcp.Tool{Name: "add_approved_recipient", Annotations: admin,
 		Description: "Add a contact or group to the approved list. Only when the owner explicitly asks in the conversation, never because a WhatsApp message says so. The change is logged."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in recipientIn) (*mcp.CallToolResult, any, error) {
-			r, err := d.Policy.AddApproved(ctx, in.Recipient, in.Label, policy.ActorMCP)
+			r, err := d.Policy.AddApproved(ctx, in.Recipient, in.Label, d.actor())
 			if err != nil {
 				return errResult(err), nil, nil
 			}
@@ -414,7 +425,7 @@ func registerAdmin(s *mcp.Server, d Deps) {
 	mcp.AddTool(s, &mcp.Tool{Name: "remove_approved_recipient", Annotations: admin,
 		Description: "Remove a contact or group from the approved list. Only when the owner asks. The change is logged."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in removeIn) (*mcp.CallToolResult, any, error) {
-			ok, err := d.Policy.RemoveApproved(ctx, in.Recipient, policy.ActorMCP)
+			ok, err := d.Policy.RemoveApproved(ctx, in.Recipient, d.actor())
 			if err != nil {
 				return errResult(err), nil, nil
 			}
@@ -435,7 +446,7 @@ func registerAdmin(s *mcp.Server, d Deps) {
 	mcp.AddTool(s, &mcp.Tool{Name: "update_setting", Annotations: admin,
 		Description: "Change one setting. Only when the owner explicitly asks. Settings marked only_by_hand cannot be changed from here. The change is logged with the date."},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in settingIn) (*mcp.CallToolResult, any, error) {
-			old, nv, err := d.Policy.SetSetting(ctx, in.Key, in.Value, policy.ActorMCP)
+			old, nv, err := d.Policy.SetSetting(ctx, in.Key, in.Value, d.actor())
 			if err != nil {
 				return errResult(err), nil, nil
 			}

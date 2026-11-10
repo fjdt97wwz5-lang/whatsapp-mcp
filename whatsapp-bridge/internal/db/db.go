@@ -100,6 +100,25 @@ var migrations = []string{
 	);
 	CREATE INDEX IF NOT EXISTS audit_log_at ON audit_log (at DESC);
 	CREATE INDEX IF NOT EXISTS audit_log_action ON audit_log (action, at DESC);`,
+
+	// 3: one-time links that open the web panel (made by "whatsapp-mcp panel").
+	`CREATE TABLE IF NOT EXISTS panel_login (
+		token_hash TEXT PRIMARY KEY,
+		expires_at TIMESTAMPTZ NOT NULL,
+		used_at    TIMESTAMPTZ
+	);`,
+
+	// 4: what the owner knows about each chat: category and country (the
+	// country is where the person is, which the phone prefix only suggests).
+	`CREATE TABLE IF NOT EXISTS chat_meta (
+		jid        TEXT PRIMARY KEY,
+		category   TEXT NOT NULL DEFAULT '',
+		country    TEXT NOT NULL DEFAULT '',
+		updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		updated_by TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX IF NOT EXISTS chat_meta_category ON chat_meta (category);
+	CREATE INDEX IF NOT EXISTS chat_meta_country ON chat_meta (country);`,
 }
 
 // Migrate applies pending application migrations inside transactions.

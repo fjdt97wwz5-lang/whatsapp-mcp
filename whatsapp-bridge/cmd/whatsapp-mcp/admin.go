@@ -292,6 +292,7 @@ func cmdStatus(args []string) error {
 	if err != nil {
 		return err
 	}
+	fmt.Println(whatsappLine(cfg))
 	ts := httpapi.TailscaleIPs()
 	if len(ts) == 0 {
 		fmt.Println("Tailscale: no veo direcciones de Tailscale en este equipo (¿está conectado?)")

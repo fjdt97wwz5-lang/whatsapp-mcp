@@ -88,7 +88,9 @@ type Server struct {
 }
 
 // New builds the server.
-func New(cfg *config.Config, mcpServer *mcp.Server, bridge *wa.Bridge, pol *policy.Policy, log waLog.Logger) (*Server, error) {
+// panelHandler (may be nil) serves /panel/ with its own login instead of
+// the token.
+func New(cfg *config.Config, mcpServer *mcp.Server, bridge *wa.Bridge, pol *policy.Policy, panelHandler http.Handler, log waLog.Logger) (*Server, error) {
 	allowed := mustNets(cfg.AllowedNetworks...)
 	mux := http.NewServeMux()
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer },
@@ -96,25 +98,38 @@ func New(cfg *config.Config, mcpServer *mcp.Server, bridge *wa.Bridge, pol *poli
 	mux.Handle("/mcp", mcpHandler)
 	mux.Handle("/mcp/", mcpHandler)
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": version.Version, "whatsapp": bridge.Status()})
+		st := bridge.Status()
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "version": version.Version,
+			"linked": st.Paired, "connected": st.Connected && st.LoggedIn, "number": st.Number(),
+			"summary": st.Summary(), "whatsapp": st})
 	})
 	if cfg.RESTEnabled {
 		mux.HandleFunc("/api/send", restSend(bridge))
 		mux.HandleFunc("/api/download", restDownload(bridge))
 	}
 	s := &Server{cfg: cfg, allowed: allowed, log: log, listening: map[string]*http.Server{}}
-	s.handler = s.guard(mux)
+	s.handler = s.guard(mux, panelHandler)
 	return s, nil
 }
 
 // guard rejects callers outside the allowed networks and without the token.
-func (s *Server) guard(next http.Handler) http.Handler {
+// The panel (/panel/) has its own login and is passed through after the
+// network check.
+func (s *Server) guard(next, panelHandler http.Handler) http.Handler {
 	token := []byte(s.cfg.AuthToken)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		host, _, err := net.SplitHostPort(r.RemoteAddr)
 		ip := net.ParseIP(host)
 		if err != nil || ip == nil || !inNets(ip, s.allowed) {
 			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if panelHandler != nil && (r.URL.Path == "/panel" || strings.HasPrefix(r.URL.Path, "/panel/")) {
+			panelHandler.ServeHTTP(w, r)
+			return
+		}
+		if panelHandler != nil && r.URL.Path == "/" && r.Method == http.MethodGet {
+			http.Redirect(w, r, "/panel/", http.StatusFound)
 			return
 		}
 		got := ""

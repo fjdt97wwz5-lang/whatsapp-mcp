@@ -68,6 +68,15 @@ type Config struct {
 	// DeviceName is how this connector shows up in WhatsApp > Linked devices.
 	DeviceName string `json:"device_name"`
 
+	// Cloud access (Tailscale Funnel). The connector listens on
+	// 127.0.0.1:CloudPort for MCP only, answers only while the
+	// cloud_access_enabled setting is on, and only with CloudKey (in the
+	// address /mcp/k/<key> or as a Bearer token). Funnel publishes that
+	// port on https://<machine>.<tailnet>.ts.net:CloudPublicPort.
+	CloudPort       int    `json:"cloud_port"`
+	CloudPublicPort int    `json:"cloud_public_port"`
+	CloudKey        string `json:"cloud_key"`
+
 	path string
 }
 
@@ -101,6 +110,10 @@ func Defaults(dataDir string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	cloud, err := RandomSecret(24)
+	if err != nil {
+		return nil, err
+	}
 	return &Config{
 		ListenPort:      8765,
 		ListenHosts:     []string{"127.0.0.1", "tailscale"},
@@ -112,6 +125,9 @@ func Defaults(dataDir string) (*Config, error) {
 		LogFile:         filepath.Join(dataDir, "logs", "whatsapp-mcp.log"),
 		LogLevel:        "INFO",
 		DeviceName:      "WhatsApp MCP (server)",
+		CloudPort:       8767,
+		CloudPublicPort: 10000,
+		CloudKey:        cloud,
 	}, nil
 }
 
@@ -135,10 +151,35 @@ func Load(path string) (*Config, error) {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}
 	c.path = path
+	c.fillNew()
 	if err := c.Validate(); err != nil {
 		return nil, fmt.Errorf("config %s: %w", path, err)
 	}
 	return c, nil
+}
+
+// fillNew sets defaults for fields added after the file was written.
+func (c *Config) fillNew() {
+	if c.CloudPort == 0 {
+		c.CloudPort = 8767
+	}
+	if c.CloudPublicPort == 0 {
+		c.CloudPublicPort = 10000
+	}
+}
+
+// EnsureCloudKey makes a cloud key if there is none yet (configs from
+// 2.0.0) and reports whether the config changed.
+func (c *Config) EnsureCloudKey() (bool, error) {
+	if c.CloudKey != "" {
+		return false, nil
+	}
+	k, err := RandomSecret(24)
+	if err != nil {
+		return false, err
+	}
+	c.CloudKey = k
+	return true, nil
 }
 
 // Path returns the file the config was loaded from.
@@ -202,6 +243,12 @@ func (c *Config) Validate() error {
 	}
 	if c.MediaDir == "" {
 		return errors.New("media_dir is empty")
+	}
+	if c.CloudPort < 0 || c.CloudPort > 65535 || (c.CloudPort != 0 && c.CloudPort == c.ListenPort) {
+		return errors.New("cloud_port must be 1-65535 and different from listen_port")
+	}
+	if c.CloudKey != "" && len(c.CloudKey) < 32 {
+		return errors.New("cloud_key must be at least 32 characters")
 	}
 	return nil
 }

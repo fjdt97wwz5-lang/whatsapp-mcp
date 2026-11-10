@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"strings"
+
+	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/config"
 )
 
 var stdin = bufio.NewReader(os.Stdin)
@@ -22,9 +24,22 @@ func confirm(prompt string) bool {
 
 func cmdMenu(args []string) error {
 	extra := args // passes --config through
+	cfgPath := config.DefaultPath()
+	for i, a := range extra {
+		if a == "--config" && i+1 < len(extra) {
+			cfgPath = extra[i+1]
+		}
+	}
 	for {
+		line := "Estado de WhatsApp desconocido."
+		if cfg, err := config.Load(cfgPath); err == nil {
+			line = whatsappLine(cfg)
+		}
 		fmt.Print(`
 ================ WhatsApp MCP ================
+` + line + `
+ (El panel web es más cómodo: menú Inicio > WhatsApp MCP > Panel de WhatsApp MCP)
+----------------------------------------------
  1. Estado
  2. Vincular WhatsApp (código QR)
  3. Vincular WhatsApp con código de 8 letras
@@ -36,6 +51,7 @@ func cmdMenu(args []string) error {
  9. Ver registro de envíos y cambios
 10. Importar historial de la Mac (messages.db)
 11. Ver cómo conectar desde la Mac
+12. Abrir el panel web
  0. Salir
 `)
 		var err error
@@ -66,6 +82,8 @@ func cmdMenu(args []string) error {
 			err = cmdMigrate(append([]string{"--from", strings.Trim(ask("Ruta del archivo messages.db: "), `"`)}, extra...))
 		case "11":
 			err = cmdConnectionInfo(extra)
+		case "12":
+			err = cmdPanel(extra)
 		case "0", "":
 			return nil
 		default:

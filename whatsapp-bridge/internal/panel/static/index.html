@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WhatsApp MCP</title>
+<link rel="stylesheet" href="app.css">
+<link rel="icon" href="data:,">
+</head>
+<body>
+<div id="login" class="login hidden">
+  <form id="login-form" class="card login-card" autocomplete="off">
+    <div class="brand-big"><span class="logo"></span> WhatsApp MCP</div>
+    <p id="login-msg">Abre el panel desde el menú Inicio del servidor (WhatsApp MCP &gt; Panel de WhatsApp MCP).</p>
+    <p class="muted">O entra con la clave de acceso (la de "Conectar desde la Mac").</p>
+    <label class="field"><span>Clave de acceso</span><input id="login-key" type="password" autocomplete="current-password"></label>
+    <button class="btn primary" type="submit">Entrar</button>
+    <p id="login-err" class="err"></p>
+  </form>
+</div>
+
+<div id="app" class="app hidden">
+  <aside class="side">
+    <div class="brand"><span class="logo"></span><span>WhatsApp MCP</span></div>
+    <nav id="nav">
+      <a href="#inicio" data-s="inicio"><i class="ic ic-home"></i><span>Inicio</span></a>
+      <a href="#vincular" data-s="vincular"><i class="ic ic-link"></i><span>Vincular WhatsApp</span></a>
+      <a href="#conversaciones" data-s="conversaciones"><i class="ic ic-chat"></i><span>Conversaciones</span></a>
+      <a href="#lista" data-s="lista"><i class="ic ic-check"></i><span>Lista aprobada</span></a>
+      <a href="#ajustes" data-s="ajustes"><i class="ic ic-gear"></i><span>Ajustes</span></a>
+      <a href="#registro" data-s="registro"><i class="ic ic-log"></i><span>Registro</span></a>
+      <a href="#conectar" data-s="conectar"><i class="ic ic-plug"></i><span>Conectar Claude</span></a>
+      <a href="#importar" data-s="importar"><i class="ic ic-import"></i><span>Importar historial</span></a>
+    </nav>
+    <div class="side-foot"><span id="ver"></span> · <a href="#" id="logout">Salir</a></div>
+  </aside>
+
+  <main class="main">
+    <div id="banner" class="banner"><span class="dot"></span><div><b id="banner-title">Cargando…</b><div id="banner-sub" class="muted"></div></div></div>
+
+    <section id="s-inicio" class="sec">
+      <div class="grid4">
+        <div class="card stat"><div class="k">Chats</div><div class="v" id="st-chats">–</div></div>
+        <div class="card stat"><div class="k">Mensajes</div><div class="v" id="st-msgs">–</div></div>
+        <div class="card stat"><div class="k">Sin responder (30 días)</div><div class="v" id="st-unans">–</div><a href="#conversaciones" id="go-unans" class="small">Ver</a></div>
+        <div class="card stat"><div class="k">Lista aprobada</div><div class="v" id="st-appr">–</div><a href="#lista" class="small">Ver</a></div>
+      </div>
+      <div class="card">
+        <h3>Servicio</h3>
+        <dl class="kv" id="st-kv"></dl>
+      </div>
+    </section>
+
+    <section id="s-vincular" class="sec hidden">
+      <div class="card center" id="pair-card">
+        <h2>Vincular WhatsApp</h2>
+        <div id="pair-linked" class="hidden">
+          <p class="big ok-text" id="pair-linked-text"></p>
+          <p class="muted">Para cambiar de número, primero desvincula este.</p>
+          <button class="btn danger" id="unlink">Desvincular este WhatsApp</button>
+        </div>
+        <div id="pair-start" class="hidden">
+          <p>Usa mejor un número secundario, no el principal de la empresa.</p>
+          <div class="row center-row">
+            <button class="btn primary" id="pair-qr">Mostrar código QR</button>
+            <span class="muted">o</span>
+            <div class="phone-input" id="pair-phone-wrap"></div>
+            <button class="btn" id="pair-phone">Pedir código de 8 letras</button>
+          </div>
+        </div>
+        <div id="pair-run" class="hidden">
+          <p id="pair-help"></p>
+          <img id="pair-img" class="qr hidden" alt="Código QR para vincular WhatsApp">
+          <div id="pair-code" class="pcode hidden"></div>
+          <p class="muted" id="pair-sub"></p>
+          <button class="btn" id="pair-cancel">Cancelar</button>
+        </div>
+        <p id="pair-err" class="err"></p>
+      </div>
+    </section>
+
+    <section id="s-conversaciones" class="sec hidden">
+      <div class="card">
+        <div class="toolbar">
+          <input id="c-q" type="search" placeholder="Buscar por nombre o número">
+          <select id="c-kind"><option value="">Todos</option><option value="contacts">Contactos</option><option value="groups">Grupos</option></select>
+          <select id="c-cat"></select>
+          <select id="c-country"></select>
+          <label class="chip"><input type="checkbox" id="c-unans"> Sin responder</label>
+          <label class="chip"><input type="checkbox" id="c-appr"> Solo aprobados</label>
+        </div>
+        <div id="c-list" class="list"></div>
+        <div class="center"><button class="btn hidden" id="c-more">Ver más</button></div>
+      </div>
+    </section>
+
+    <section id="s-lista" class="sec hidden">
+      <div class="card">
+        <h3>Añadir un número</h3>
+        <p class="muted">Lo más fácil es aprobar desde <a href="#conversaciones">Conversaciones</a>. Aquí puedes añadir uno a mano.</p>
+        <form id="a-form" class="row wrap" autocomplete="off">
+          <div class="phone-input" id="a-phone-wrap"></div>
+          <input id="a-name" placeholder="Nombre (opcional)">
+          <button class="btn primary" type="submit">Añadir</button>
+        </form>
+        <p id="a-err" class="err"></p>
+      </div>
+      <div class="card">
+        <h3>Aprobados <span class="muted" id="a-count"></span></h3>
+        <p class="muted">Claude puede leer todos los chats, pero solo envía a estos.</p>
+        <div id="a-list" class="list"></div>
+      </div>
+    </section>
+
+    <section id="s-ajustes" class="sec hidden">
+      <div class="card"><div id="set-list"></div></div>
+    </section>
+
+    <section id="s-registro" class="sec hidden">
+      <div class="card">
+        <div class="toolbar">
+          <select id="r-filter">
+            <option value="">Todo</option>
+            <option value="message.send">Envíos</option>
+            <option value="setting">Ajustes</option>
+            <option value="approved">Lista aprobada</option>
+            <option value="chat.meta">Categoría y país</option>
+            <option value="session">Vinculación</option>
+            <option value="panel">Panel</option>
+            <option value="cloud">Acceso desde la nube</option>
+          </select>
+        </div>
+        <div class="table-wrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Quién</th><th>Qué</th><th>Sobre</th><th>Resultado</th></tr></thead><tbody id="r-body"></tbody></table></div>
+      </div>
+    </section>
+
+    <section id="s-conectar" class="sec hidden">
+      <div class="card">
+        <h3>Desde tu Mac (Tailscale)</h3>
+        <dl class="kv" id="k-kv"></dl>
+        <p class="row"><button class="btn" id="k-show">Mostrar clave</button><button class="btn" id="k-copy">Copiar clave</button></p>
+        <p class="muted">Claude Code en la Mac:</p>
+        <pre id="k-cmd" class="code"></pre>
+      </div>
+      <div class="card">
+        <h3>Desde Claude en la nube (Tailscale Funnel)</h3>
+        <p class="muted">Permite que Claude use tu WhatsApp desde claude.ai y haga seguimientos automáticos, con una clave distinta a la de la Mac. Apagado por defecto.</p>
+        <dl class="kv" id="cl-kv"></dl>
+        <p class="row wrap">
+          <button class="btn" id="cl-url-show">Mostrar dirección</button>
+          <button class="btn" id="cl-url-copy">Copiar dirección</button>
+          <button class="btn" id="cl-funnel"></button>
+          <button class="btn danger" id="cl-rotate">Cambiar la clave de la nube</button>
+        </p>
+        <ol class="steps">
+          <li>En <a href="#ajustes">Ajustes</a>, enciende <b>Acceso desde la nube</b>.</li>
+          <li>Pulsa <b>Publicar en Funnel</b> (o escribe el comando de arriba en PowerShell como administrador).</li>
+          <li>En claude.ai: <b>Configuración</b> &gt; <b>Conectores</b> &gt; <b>Añadir conector personalizado</b>. Nombre: WhatsApp. URL: pega la dirección copiada. Sin OAuth.</li>
+          <li>Para cortarlo al instante: apaga <b>Acceso desde la nube</b> o pulsa <b>Cambiar la clave de la nube</b>.</li>
+        </ol>
+        <p class="err" id="cl-err"></p>
+      </div>
+    </section>
+
+    <section id="s-importar" class="sec hidden">
+      <div class="card">
+        <h3>Importar el historial de la Mac</h3>
+        <ol class="steps">
+          <li>En la Mac, detén el puente anterior y copia <b>whatsapp-bridge/store/messages.db</b> a este servidor.</li>
+          <li>En el Explorador de Windows, clic derecho sobre el archivo &gt; <b>Copiar como ruta</b>.</li>
+          <li>Pégala aquí y pulsa Importar. Puedes repetirlo: no duplica mensajes.</li>
+        </ol>
+        <form id="i-form" class="row wrap"><input id="i-path" class="grow" placeholder="C:\Users\...\Downloads\messages.db"><button class="btn primary">Importar</button></form>
+        <p id="i-msg"></p>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="toast" class="toast hidden"></div>
+<script src="countries.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
