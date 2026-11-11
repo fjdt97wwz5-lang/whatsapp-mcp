@@ -4,7 +4,7 @@
 # Usage: installer/build.sh [VERSION]   -> dist/
 set -euo pipefail
 
-VERSION="${1:-2.0.3}"
+VERSION="${1:-2.0.4}"
 PG_VERSION="17.11.0"
 PG_JAR_SHA256="98040fae18dd9633ff95932125b0cecf0a45a1a9312e216e2a33ad03a31d4251"
 VC_VERSION="14.51.36231"

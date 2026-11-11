@@ -1,5 +1,14 @@
-WhatsApp MCP 2.0.3 - Guía rápida
+WhatsApp MCP 2.0.4 - Guía rápida
 ================================
+
+IMPORTANTE después de actualizar a la 2.0.4:
+1. Abre el Panel de WhatsApp MCP > Conectar Claude y pulsa "Cambiar la clave
+   de la nube". La clave anterior salió en capturas de pantalla, así que hay
+   que cambiarla. La dirección vieja deja de servir en ese momento.
+2. Pulsa "Copiar dirección".
+3. En claude.ai, ve a Configuración > Conectores, abre tu conector de
+   WhatsApp, cambia la dirección por la nueva y guarda (o bórralo y vuelve a
+   añadirlo con la dirección nueva).
 
 Qué es
 ------
@@ -16,6 +25,12 @@ pide permiso de administrador).
 
 Usa un número secundario si puedes: WhatsApp no permite oficialmente este
 tipo de conexiones y podría bloquear el número.
+
+Novedades de la 2.0.4
+---------------------
+- Claude en la nube ya puede conectarse. Antes el programa rechazaba todo
+  lo que llegaba por la dirección pública (Funnel) y claude.ai decía que no
+  podía llegar a la dirección.
 
 Novedades de la 2.0.3
 ---------------------
@@ -52,7 +67,7 @@ Novedades de la 2.0.1
 
 1. Instalar o actualizar en el servidor Windows
 -----------------------------------------------
-1. Copia WhatsAppMCP-Setup-2.0.3.exe al servidor y ábrelo.
+1. Copia WhatsAppMCP-Setup-2.0.4.exe al servidor y ábrelo.
    Windows puede avisar "Windows protegió su PC" porque el instalador no
    está firmado: "Más información" > "Ejecutar de todas formas".
 2. Acepta el permiso de administrador y sigue los pasos.

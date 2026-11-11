@@ -24,6 +24,14 @@ by Claude through MCP tools. Settings marked hand-only (`send_only_to_approved`,
 `mcp_can_change_settings`, `cloud_access_enabled`, `panel_remote`) cannot be
 changed through MCP.
 
+## 2.0.4
+
+- Cloud access works through Tailscale Funnel. Funnel forwards the public
+  Host (`<name>.ts.net:10000`) to the 127.0.0.1 listener, and the MCP SDK's
+  DNS-rebinding guard answered 403 to every call. The guard is off on the
+  cloud handler only; the cloud listener checks the Host itself (loopback or
+  `*.ts.net`) before the key check.
+
 ## 2.0.3
 
 - The panel shortcut and the installer's "Abrir el panel ahora" open the
@@ -98,10 +106,10 @@ docs/GUIA.md             user guide (Spanish)
 ## Build
 
 ```
-installer/build.sh 2.0.3     # needs Go, makensis, python3, curl
+installer/build.sh 2.0.4     # needs Go, makensis, python3, curl
 ```
 
-Produces `dist/WhatsAppMCP-Setup-2.0.3.exe` plus macOS binaries for the
+Produces `dist/WhatsAppMCP-Setup-2.0.4.exe` plus macOS binaries for the
 `connect` helper. The installer bundles PostgreSQL 17 for Windows
 (zonky embedded-postgres-binaries, checksum-pinned) and the MSVC runtime DLLs.
 
