@@ -1,13 +1,12 @@
-WhatsApp MCP 2.0.5 - Guía rápida
+WhatsApp MCP 2.0.6 - Guía rápida
 ================================
 
-IMPORTANTE después de actualizar a la 2.0.5:
-WhatsApp MCP ahora entra a tu Tailscale como un equipo aparte, con su
-propia dirección en el puerto normal de internet (443). Sigue la sección
-"7. Conectar Claude en la nube" paso a paso: primero creas una clave de
-Tailscale en la página de administración (paso A), luego la pegas en el
-panel (paso B) y al final cambias la dirección en claude.ai (paso C).
-No hace falta tocar nada del Tailscale del servidor ni de etiquetas.
+Al actualizar de la 2.0.5 a la 2.0.6 no hay que tocar nada: la dirección
+propia en Tailscale (whatsapp-mcp...ts.net), la clave de la nube y el
+conector de claude.ai siguen igual. Solo instala encima.
+
+Si vienes de una versión anterior a la 2.0.5, sigue la sección
+"7. Conectar Claude en la nube" paso a paso.
 
 Qué es
 ------
@@ -24,6 +23,21 @@ pide permiso de administrador).
 
 Usa un número secundario si puedes: WhatsApp no permite oficialmente este
 tipo de conexiones y podría bloquear el número.
+
+Novedades de la 2.0.6
+---------------------
+- Contactos desde los grupos (sección nueva "Contactos" del panel). Eliges
+  los grupos, pulsas "Importar" y cada miembro se guarda como contacto con
+  su número real cuando WhatsApp lo deja ver, su nombre de perfil en
+  Primera Mayúscula (editable), el país por el prefijo con su bandera
+  (editable) y de qué grupos viene. Ver la sección 10.
+- Claude puede abrir los archivos que te mandan: fotos, Excel, CSV, PDF,
+  Word y notas de voz (transcritas a texto en este servidor, con la
+  tarjeta gráfica). Ver las secciones 11 y 12.
+- Arreglo: algunas fotos y archivos no se guardaban en el historial (por
+  ejemplo, las fotos enviadas en grupo de varias, "álbum"). Ahora sí.
+  Para recuperar uno que faltó: botón "Pedir mensajes otra vez" en el
+  chat (sección 13).
 
 Novedades de la 2.0.5
 ---------------------
@@ -80,7 +94,7 @@ Novedades de la 2.0.1
 
 1. Instalar o actualizar en el servidor Windows
 -----------------------------------------------
-1. Copia WhatsAppMCP-Setup-2.0.5.exe al servidor y ábrelo.
+1. Copia WhatsAppMCP-Setup-2.0.6.exe al servidor y ábrelo.
    Windows puede avisar "Windows protegió su PC" porque el instalador no
    está firmado: "Más información" > "Ejecutar de todas formas".
 2. Acepta el permiso de administrador y sigue los pasos.
@@ -105,6 +119,7 @@ Secciones a la izquierda:
 - Inicio: estado del servicio, chats, mensajes, sin responder y aprobados.
 - Vincular WhatsApp: el código QR o el código de 8 letras.
 - Conversaciones: todos los chats y grupos.
+- Contactos: los miembros de los grupos que elijas, guardados como contactos.
 - Lista aprobada: a quién puede enviar Claude.
 - Ajustes: interruptores. Los marcados "Solo a mano" solo se cambian aquí,
   nunca desde Claude.
@@ -295,6 +310,12 @@ Ajustes principales:
   Envíos por minuto como máximo   10.
   Guardar el texto enviado        Por defecto: no.
   Categorías de chats             Cliente, Distribuidor, Proveedor, Personal, Otro.
+  Contactos de grupos a la lista aprobada
+                                  Solo a mano. Por defecto: sí.
+  Claude puede abrir archivos     Por defecto: sí.
+  Tamaño máximo para abrir        25 MB.
+  Transcribir notas de voz        Por defecto: sí (necesita instalarla, sección 12).
+  Idioma de las notas de voz      Automático (español o inglés).
   Acceso desde la nube            Solo a mano. Por defecto: apagado.
   Panel desde otros equipos       Solo a mano. Por defecto: apagado.
 
@@ -314,3 +335,90 @@ Los cambios tardan hasta 5 segundos en aplicarse.
   "whatsapp-mcp rotate-token", y actualízala en la Mac.
 - Desinstalar: Panel de control > Programas > WhatsApp MCP. Pregunta si
   borrar los datos; por defecto se conservan.
+
+
+10. Contactos desde los grupos
+------------------------------
+Panel > Contactos.
+1. Marca los grupos de los que quieres sacar contactos. Puedes buscar por
+   nombre y ver "Solo los elegidos".
+2. Pulsa "Importar contactos de los grupos elegidos". Nada se importa solo:
+   los miembros nuevos de un grupo se añaden solo cuando vuelves a pulsar.
+3. Sale el resumen: cuántos nuevos, cuántos actualizados y cuántos se
+   añadieron a la lista aprobada.
+
+Cada contacto guarda:
+- El número real. Algunas personas tienen el número oculto en los grupos
+  (WhatsApp las muestra con un código, no con el número). Esas se guardan
+  con el código y una pista como +57∙∙∙∙∙∙67, y el número se completa solo
+  en una importación posterior si WhatsApp llega a mostrarlo (por ejemplo,
+  después de que te escriban).
+- El nombre del perfil de WhatsApp en Primera Mayúscula. Lo puedes cambiar
+  en la lista; un nombre que cambiaste no se pisa al importar otra vez.
+- El país por el prefijo, con bandera. También se puede cambiar.
+- De qué grupos viene.
+
+Lista aprobada: si "Contactos de grupos a la lista aprobada" está encendido
+(Ajustes, solo a mano), cada contacto importado se añade también a la lista
+aprobada, con su nombre. Los que ya estaban en la lista no se tocan.
+Borrar un contacto no lo quita de la lista aprobada.
+
+Claude puede ver los grupos y sus miembros (list_my_groups,
+list_group_members), los contactos guardados (list_contacts) y corregir un
+nombre o país cuando se lo pidas (update_contact, queda en el Registro).
+Importar solo se hace con el botón del panel.
+
+
+11. Claude abre los archivos que te mandan
+------------------------------------------
+Pídele por ejemplo "abre la lista de precios que me mandó Mauricio".
+Claude usa la herramienta read_attachment y recibe:
+- Fotos y stickers: la imagen (reducida si es muy grande).
+- Excel (.xlsx), CSV: las tablas, hoja por hoja (hasta 300 filas por hoja
+  si no le pides más).
+- PDF, Word (.docx), texto: el texto. Un PDF escaneado (solo imagen) no
+  tiene texto: Claude te lo dice.
+- Notas de voz y audios: la transcripción (sección 12).
+- Videos: no se pueden leer.
+Los archivos viejos .xls y .doc no se leen: pide que te los manden como
+.xlsx o .docx, o ábrelos y guárdalos así.
+
+Ajustes: "Claude puede abrir archivos recibidos" (encendido) y "Tamaño
+máximo para abrir un archivo" (25 MB). Cada archivo abierto queda en el
+Registro. Lo que dice un archivo es de otra persona: Claude no obedece
+instrucciones que vengan dentro.
+
+
+12. Transcripción de notas de voz
+---------------------------------
+Funciona en este servidor, sin mandar el audio a ninguna parte, con la
+tarjeta gráfica NVIDIA (si no la encuentra, usa el procesador, más lento).
+Entiende español e inglés.
+
+Instalar una sola vez: Panel > Ajustes > tarjeta "Transcripción de notas de
+voz" > "Instalar transcripción". Descarga unos 3 GB (Python, las librerías
+de la tarjeta gráfica y el modelo de voz) y deja una barra con el
+porcentaje. Puedes seguir usando el panel mientras tanto. Al terminar dice
+"Funciona con: Tarjeta gráfica NVIDIA (rápido)" o "Procesador".
+
+Cada nota de voz se transcribe una vez y se guarda; si Claude la vuelve a
+pedir, sale al instante. "Quitar transcripción" borra lo descargado
+(las transcripciones hechas se quedan). El interruptor "Transcribir notas
+de voz" y el idioma están en Ajustes.
+
+Si la instalación falla, el error sale en la tarjeta y en el Registro;
+"Instalar otra vez" vuelve a empezar.
+
+
+13. Si falta un mensaje o un archivo en un chat
+-----------------------------------------------
+Conversaciones > el chat > "Pedir mensajes otra vez". El programa le pide a
+TU teléfono que mande de nuevo los últimos 100 mensajes de ese chat (al
+contacto no le llega nada). El teléfono tiene que estar encendido y con
+internet. Llegan en un minuto o dos.
+
+Claude puede hacer lo mismo con request_chat_history cuando se lo pidas.
+
+Si un archivo muy viejo ya no está en los servidores de WhatsApp, no se
+puede bajar aunque el mensaje aparezca; Claude te lo dice.
+

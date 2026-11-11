@@ -3,6 +3,7 @@ package wa
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -12,8 +13,41 @@ import (
 	mstore "github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/store"
 )
 
+// unwrap opens the wrappers WhatsApp puts around a message that whatsmeow
+// does not open itself, such as the photos of an album
+// (associatedChildMessage), group mentions, spoilers and forwards from bots.
+// Without this, those photos and files were silently not stored.
+func unwrap(m *waE2E.Message) *waE2E.Message {
+	for i := 0; m != nil && i < 8; i++ {
+		var next *waE2E.Message
+		for _, fp := range []*waE2E.FutureProofMessage{
+			m.GetAssociatedChildMessage(), m.GetGroupMentionedMessage(), m.GetSpoilerMessage(),
+			m.GetBotForwardedMessage(), m.GetEphemeralMessage(), m.GetViewOnceMessage(),
+			m.GetViewOnceMessageV2(), m.GetViewOnceMessageV2Extension(), m.GetDocumentWithCaptionMessage(),
+			m.GetLottieStickerMessage(), m.GetBotInvokeMessage(), m.GetStatusMentionMessage(),
+			m.GetGroupStatusMessage(), m.GetGroupStatusMessageV2(), m.GetAudioStickerMessage(),
+		} {
+			if inner := fp.GetMessage(); inner != nil {
+				next = inner
+				break
+			}
+		}
+		if next == nil {
+			if d := m.GetDeviceSentMessage().GetMessage(); d != nil {
+				next = d
+			}
+		}
+		if next == nil {
+			return m
+		}
+		m = next
+	}
+	return m
+}
+
 // extractText returns the text of a message (plain, extended, or captions).
 func extractText(m *waE2E.Message) string {
+	m = unwrap(m)
 	if m == nil {
 		return ""
 	}
@@ -29,36 +63,100 @@ func extractText(m *waE2E.Message) string {
 	if v := m.GetVideoMessage(); v != nil {
 		return v.GetCaption()
 	}
+	if v := m.GetPtvMessage(); v != nil {
+		return v.GetCaption()
+	}
 	if d := m.GetDocumentMessage(); d != nil {
 		return d.GetCaption()
 	}
 	return ""
 }
 
+// mediaFields is what every downloadable WhatsApp attachment carries.
+type mediaFields interface {
+	GetURL() string
+	GetDirectPath() string
+	GetMediaKey() []byte
+	GetFileSHA256() []byte
+	GetFileEncSHA256() []byte
+	GetFileLength() uint64
+	GetMimetype() string
+}
+
+func mediaInfo(kind, filename string, f mediaFields) mstore.MediaInfo {
+	return mstore.MediaInfo{MediaType: kind, Filename: filename, URL: f.GetURL(), DirectPath: f.GetDirectPath(),
+		MediaKey: f.GetMediaKey(), FileSHA256: f.GetFileSHA256(), FileEncSHA256: f.GetFileEncSHA256(),
+		FileLength: f.GetFileLength(), MimeType: f.GetMimetype()}
+}
+
 // extractMedia returns what is needed to download an attachment later.
 // File names coming from the sender are cleaned here, before storing.
 func extractMedia(m *waE2E.Message, ts time.Time) mstore.MediaInfo {
+	m = unwrap(m)
 	if m == nil {
 		return mstore.MediaInfo{}
 	}
 	stamp := ts.Format("20060102_150405")
 	if img := m.GetImageMessage(); img != nil {
-		return mstore.MediaInfo{MediaType: "image", Filename: "image_" + stamp + ".jpg", URL: img.GetURL(),
-			MediaKey: img.GetMediaKey(), FileSHA256: img.GetFileSHA256(), FileEncSHA256: img.GetFileEncSHA256(), FileLength: img.GetFileLength()}
+		return mediaInfo("image", "image_"+stamp+extFor(img.GetMimetype(), ".jpg"), img)
 	}
 	if vid := m.GetVideoMessage(); vid != nil {
-		return mstore.MediaInfo{MediaType: "video", Filename: "video_" + stamp + ".mp4", URL: vid.GetURL(),
-			MediaKey: vid.GetMediaKey(), FileSHA256: vid.GetFileSHA256(), FileEncSHA256: vid.GetFileEncSHA256(), FileLength: vid.GetFileLength()}
+		return mediaInfo("video", "video_"+stamp+extFor(vid.GetMimetype(), ".mp4"), vid)
+	}
+	if vid := m.GetPtvMessage(); vid != nil {
+		return mediaInfo("video", "videonote_"+stamp+".mp4", vid)
 	}
 	if aud := m.GetAudioMessage(); aud != nil {
-		return mstore.MediaInfo{MediaType: "audio", Filename: "audio_" + stamp + ".ogg", URL: aud.GetURL(),
-			MediaKey: aud.GetMediaKey(), FileSHA256: aud.GetFileSHA256(), FileEncSHA256: aud.GetFileEncSHA256(), FileLength: aud.GetFileLength()}
+		return mediaInfo("audio", "audio_"+stamp+extFor(aud.GetMimetype(), ".ogg"), aud)
 	}
 	if doc := m.GetDocumentMessage(); doc != nil {
-		return mstore.MediaInfo{MediaType: "document", Filename: SafeFilename(doc.GetFileName(), "document_"+stamp), URL: doc.GetURL(),
-			MediaKey: doc.GetMediaKey(), FileSHA256: doc.GetFileSHA256(), FileEncSHA256: doc.GetFileEncSHA256(), FileLength: doc.GetFileLength()}
+		name := doc.GetFileName()
+		if name == "" {
+			name = doc.GetTitle()
+		}
+		if name == "" {
+			name = "document_" + stamp + extFor(doc.GetMimetype(), "")
+		}
+		return mediaInfo("document", SafeFilename(name, "document_"+stamp), doc)
+	}
+	if st := m.GetStickerMessage(); st != nil {
+		return mediaInfo("sticker", "sticker_"+stamp+".webp", st)
 	}
 	return mstore.MediaInfo{}
+}
+
+// extFor picks a file extension from a MIME type.
+func extFor(mime, def string) string {
+	mime = strings.ToLower(strings.TrimSpace(strings.SplitN(mime, ";", 2)[0]))
+	switch mime {
+	case "image/jpeg":
+		return ".jpg"
+	case "image/png":
+		return ".png"
+	case "image/webp":
+		return ".webp"
+	case "image/gif":
+		return ".gif"
+	case "image/heic":
+		return ".heic"
+	case "video/mp4":
+		return ".mp4"
+	case "audio/ogg":
+		return ".ogg"
+	case "audio/mpeg":
+		return ".mp3"
+	case "audio/mp4", "audio/aac", "audio/x-m4a":
+		return ".m4a"
+	case "application/pdf":
+		return ".pdf"
+	case "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
+		return ".xlsx"
+	case "application/vnd.openxmlformats-officedocument.wordprocessingml.document":
+		return ".docx"
+	case "text/csv":
+		return ".csv"
+	}
+	return def
 }
 
 func (b *Bridge) handleMessage(ctx context.Context, msg *events.Message) {

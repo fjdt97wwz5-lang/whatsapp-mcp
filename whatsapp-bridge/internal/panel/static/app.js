@@ -20,7 +20,14 @@
       });
     });
   }
-  function errTo(el) { return function (e) { if (e.message !== 'login') { if (el) $(el).textContent = e.message; else toast(e.message); } }; }
+  var ES_ERR = [
+    [/not connected/i, 'WhatsApp no está conectado ahora. Revisa Inicio.'],
+    [/no stored messages in this chat/i, 'Este chat no tiene mensajes guardados desde donde pedir.'],
+    [/not a group id/i, 'Eso no es un grupo.'],
+    [/no groups chosen yet/i, 'Primero marca los grupos de los que quieres sacar contactos.'],
+    [/forbidden|not-authorized|not in group|item-not-found/i, 'Ya no estás en este grupo o WhatsApp no deja ver sus miembros.']];
+  function esErr(m) { m = String(m || ''); for (var i = 0; i < ES_ERR.length; i++) if (ES_ERR[i][0].test(m)) return ES_ERR[i][1]; return m; }
+  function errTo(el) { return function (e) { if (e.message !== 'login') { var m = esErr(e.message); if (el) $(el).textContent = m; else toast(m); } }; }
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
   function fmtDate(s) {
     if (!s) return '';
@@ -127,7 +134,7 @@
       route();
     }).catch(function () { showLogin('No se pudo conectar con el servicio.'); });
   }
-  var SECTIONS = ['inicio', 'vincular', 'conversaciones', 'lista', 'ajustes', 'registro', 'conectar', 'importar'];
+  var SECTIONS = ['inicio', 'vincular', 'conversaciones', 'contactos', 'lista', 'ajustes', 'registro', 'conectar', 'importar'];
   function route() {
     var s = location.hash.replace('#', '');
     if (SECTIONS.indexOf(s) < 0) s = 'inicio';
@@ -135,8 +142,8 @@
     SECTIONS.forEach(function (x) { show('s-' + x, x === s); });
     document.querySelectorAll('#nav a').forEach(function (a) { a.classList.toggle('on', a.dataset.s === s); });
     if (s !== 'vincular') { clearInterval(timers.pair); timers.pair = null; }
-    ({ inicio: refreshStatus, vincular: loadPair, conversaciones: function () { loadChats(true); }, lista: loadApproved,
-      ajustes: loadSettings, registro: loadAudit, conectar: loadConnection, importar: function () { } })[s]();
+    ({ inicio: refreshStatus, vincular: loadPair, conversaciones: function () { loadChats(true); }, contactos: loadContactsSection, lista: loadApproved,
+      ajustes: function () { loadSettings(); loadTranscribe(); }, registro: loadAudit, conectar: loadConnection, importar: function () { } })[s]();
   }
   window.addEventListener('hashchange', function () { if (!$('app').classList.contains('hidden')) route(); });
 
@@ -265,7 +272,8 @@
       '<div class="s">' + esc(sub.concat(when ? [when] : []).join(' · ')) + (prev ? ' — ' + esc(prev) : '') + '</div>' +
       '<div class="meta"><select class="m-cat" aria-label="Categoría">' + categoryOptions(c.category) + '</select>' +
       '<select class="m-country" aria-label="País">' + countryOptions(c.country, c.country ? '' : c.country_suggested) + '</select></div></div>' +
-      '<div class="acts"><button class="btn sm ' + (c.approved ? 'on' : 'primary') + ' m-appr">' + (c.approved ? 'Aprobado ✓' : 'Aprobar') + '</button></div></div>';
+      '<div class="acts"><button class="btn sm ' + (c.approved ? 'on' : 'primary') + ' m-appr">' + (c.approved ? 'Aprobado ✓' : 'Aprobar') + '</button>' +
+      '<button class="btn sm m-hist" title="Pide al teléfono los últimos 100 mensajes de este chat, por si falta alguno o un archivo">Pedir mensajes otra vez</button></div></div>';
   }
   function chatQuery() {
     var q = new URLSearchParams();
@@ -292,6 +300,14 @@
   $('c-q').addEventListener('input', function () { clearTimeout(chatTimer); chatTimer = setTimeout(function () { loadChats(true); }, 300); });
   $('c-more').addEventListener('click', function () { chatOffset += 60; loadChats(false); });
   $('c-list').addEventListener('click', function (e) {
+    var h = e.target.closest('.m-hist');
+    if (h) {
+      h.disabled = true;
+      api('chats/history', { jid: h.closest('.item').dataset.jid, count: 100 }).then(function () {
+        toast('Pedido al teléfono. Los mensajes que falten llegan en un minuto o dos.');
+      }).catch(errTo()).finally(function () { h.disabled = false; });
+      return;
+    }
     var b = e.target.closest('.m-appr'); if (!b) return;
     var it = b.closest('.item'), on = b.classList.contains('on');
     b.disabled = true;
@@ -355,6 +371,11 @@
     download_media_enabled: ['Descargar archivos recibidos', 'Permite bajar fotos, audios, videos y documentos recibidos.'],
     chat_categories: ['Categorías de chats', 'Separadas por comas. Son las que aparecen en Conversaciones.'],
     cloud_access_enabled: ['Acceso desde la nube (Tailscale Funnel)', 'Deja que Claude en claude.ai use tu WhatsApp con la clave de la nube. Apagado = solo equipos de tu Tailscale. Ve a Conectar Claude para los pasos.'],
+    group_contacts_to_approved: ['Contactos de grupos a la lista aprobada', 'Al importar contactos de los grupos elegidos, también se añaden a la lista aprobada. Los que ya estaban no se tocan.'],
+    read_media_enabled: ['Claude puede abrir archivos recibidos', 'Fotos, Excel, CSV, PDF, Word y notas de voz. Todo queda en el registro.'],
+    read_media_max_mb: ['Tamaño máximo para abrir un archivo (MB)', 'Archivos más grandes no se abren para Claude.'],
+    transcribe_audio_enabled: ['Transcribir notas de voz', 'Convierte las notas de voz en texto aquí en el servidor. Necesita la transcripción instalada (abajo).'],
+    transcribe_language: ['Idioma de las notas de voz', 'Automático detecta español o inglés solo.'],
     panel_remote: ['Panel desde otros equipos', 'Permite abrir este panel desde otros equipos de tu Tailscale, entrando con la clave. Apagado = solo en este servidor.']
   };
   function loadSettings() {
@@ -362,6 +383,8 @@
       $('set-list').innerHTML = j.settings.map(function (s) {
         var t = SET_TEXT[s.key] || [s.key, s.description], ctl;
         if (s.kind === 'bool') ctl = '<label class="switch"><input type="checkbox" data-k="' + s.key + '"' + (s.value ? ' checked' : '') + '><span></span></label>';
+        else if (s.key === 'transcribe_language') ctl = '<select data-k="' + s.key + '" class="s-sel">' + [['auto', 'Automático'], ['es', 'Español'], ['en', 'Inglés']].map(function (o) {
+          return '<option value="' + o[0] + '"' + (s.value === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>';
         else if (s.kind === 'int') ctl = '<div class="row"><input type="number" min="' + (s.min || '') + '" max="' + (s.max || '') + '" value="' + esc(s.value) + '" data-k="' + s.key + '"><button class="btn sm s-save" data-k="' + s.key + '">Guardar</button></div>';
         else ctl = '<div class="row"><input class="grow" value="' + esc(s.value) + '" data-k="' + s.key + '"><button class="btn sm s-save" data-k="' + s.key + '">Guardar</button></div>';
         return '<div class="set"><div><div class="n">' + esc(t[0]) + (s.only_by_hand ? '<span class="lock">Solo a mano</span>' : '') + '</div><div class="muted small">' + esc(t[1]) + '</div></div>' + ctl + '</div>';
@@ -373,7 +396,9 @@
       .catch(function (e) { errTo()(e); loadSettings(); });
   }
   $('set-list').addEventListener('change', function (e) {
-    var i = e.target; if (i.type !== 'checkbox' || !i.dataset.k) return;
+    var i = e.target;
+    if (i.classList.contains('s-sel')) { saveSetting(i.dataset.k, i.value, i); return; }
+    if (i.type !== 'checkbox' || !i.dataset.k) return;
     if (i.dataset.k === 'send_only_to_approved' && !i.checked && !confirm('Si lo apagas, Claude podrá enviar a cualquier número. ¿Seguro?')) { i.checked = true; return; }
     if (i.dataset.k === 'cloud_access_enabled' && i.checked && !confirm('Claude en la nube podrá leer y enviar (a la lista aprobada) desde internet con la clave de la nube. ¿Activar?')) { i.checked = false; return; }
     saveSetting(i.dataset.k, i.checked, i);
@@ -384,12 +409,149 @@
     saveSetting(b.dataset.k, i.value, i);
   });
 
+  // ---------- contacts from groups ----------
+  var GROUPS = [], k2Offset = 0, k2Timer = null;
+  function loadContactsSection() { loadGroups(); loadContacts(true); }
+  function loadGroups() {
+    $('g-err').textContent = '';
+    api('contacts/groups').then(function (j) {
+      GROUPS = j.groups || [];
+      $('g-appr').innerHTML = (j.add_to_approved ? 'Los contactos importados <b>también se añaden a la lista aprobada</b>.' : 'Los contactos importados <b>no</b> se añaden a la lista aprobada.') +
+        ' Se cambia en <a href="#ajustes">Ajustes</a>.' + (j.live ? '' : ' <span class="hint">WhatsApp no está conectado: se muestran los grupos del historial.</span>');
+      paintGroups();
+      var sel = $('k2-group'), curG = sel.value;
+      sel.innerHTML = '<option value="">Todos los grupos</option>' + GROUPS.filter(function (g) { return g.selected; }).map(function (g) {
+        return '<option value="' + esc(g.jid) + '"' + (g.jid === curG ? ' selected' : '') + '>' + esc(g.name || g.jid) + '</option>'; }).join('');
+    }).catch(errTo('g-err'));
+  }
+  function paintGroups() {
+    var q = $('g-q').value.trim().toLowerCase(), only = $('g-only').checked;
+    var rows = GROUPS.filter(function (g) { return (!only || g.selected) && (!q || (g.name || '').toLowerCase().indexOf(q) >= 0); });
+    $('g-list').innerHTML = rows.map(function (g) {
+      var sub = [];
+      if (g.members >= 0) sub.push(g.members + ' miembros');
+      if (g.last_import_at) sub.push('importado ' + fmtDate(g.last_import_at));
+      return '<label class="grow-item" data-jid="' + esc(g.jid) + '" data-name="' + esc(g.name || '') + '"><input type="checkbox" class="g-sel"' + (g.selected ? ' checked' : '') + '>' +
+        '<div class="av g">' + esc(initials(g.name || '#')) + '</div><span class="gn">' + esc(g.name || g.jid) + '</span><span class="gs">' + esc(sub.join(' · ')) + '</span></label>';
+    }).join('') || '<p class="muted center">' + (GROUPS.length ? 'Ningún grupo coincide.' : 'No hay grupos.') + '</p>';
+    var n = GROUPS.filter(function (g) { return g.selected; }).length;
+    $('g-import').textContent = n ? 'Importar contactos de ' + (n === 1 ? '1 grupo elegido' : n + ' grupos elegidos') : 'Importar contactos de los grupos elegidos';
+    $('g-import').disabled = !n;
+  }
+  $('g-q').addEventListener('input', paintGroups);
+  $('g-only').addEventListener('change', paintGroups);
+  $('g-list').addEventListener('change', function (e) {
+    var c = e.target; if (!c.classList.contains('g-sel')) return;
+    var it = c.closest('.grow-item');
+    api('contacts/groups', { jid: it.dataset.jid, name: it.dataset.name, selected: c.checked }).then(function () {
+      GROUPS.forEach(function (g) { if (g.jid === it.dataset.jid) g.selected = c.checked; });
+      paintGroups(); toast(c.checked ? 'Grupo elegido.' : 'Grupo quitado.');
+    }).catch(function (e) { c.checked = !c.checked; errTo('g-err')(e); });
+  });
+  $('g-import').addEventListener('click', function () {
+    var b = this; b.disabled = true; $('g-err').textContent = ''; $('g-result').innerHTML = '<p class="muted">Leyendo los grupos…</p>';
+    api('contacts/import', {}).then(function (j) {
+      var s = j.summary;
+      $('g-result').innerHTML = '<p class="ok-text">Listo: ' + s.new + ' contactos nuevos, ' + s.updated + ' actualizados' + (s.add_to_approved ? ', ' + s.approved + ' añadidos a la lista aprobada' : '') + '.</p>' +
+        (s.no_phone ? '<p class="muted small">' + s.no_phone + ' tienen el número oculto por WhatsApp: se guardan con su código interno y se pueden aprobar igual.</p>' : '') +
+        '<ul class="small">' + s.groups.map(function (g) {
+          return '<li><b>' + esc(g.name || g.jid) + '</b>: ' + (g.error ? '<span class="err">' + esc(esErr(g.error)) + '</span>' : g.members + ' miembros, ' + g.new + ' nuevos' + (s.add_to_approved ? ', ' + g.approved + ' aprobados' : '')) + '</li>';
+        }).join('') + '</ul>';
+      loadGroups(); loadContacts(true);
+    }).catch(function (e) { $('g-result').innerHTML = ''; errTo('g-err')(e); }).finally(function () { b.disabled = false; });
+  });
+  function contactRow(c) {
+    var phone = c.phone ? fmtPhone(c.phone) : (c.phone_hint ? c.phone_hint + ' (número oculto)' : 'Número oculto');
+    var iso = c.country;
+    return '<div class="item" data-jid="' + esc(c.jid) + '"><div class="av">' + esc(initials(c.name || '?')) + '</div><div>' +
+      '<div class="t">' + (iso ? flagSVG(iso) : '') + '<input class="k2-name" value="' + esc(c.name) + '" placeholder="Sin nombre" aria-label="Nombre">' +
+      (c.approved ? '<span class="tag">Aprobado</span>' : '') + '</div>' +
+      '<div class="s"><span class="' + (c.phone ? '' : 'hint') + '">' + esc(phone) + '</span>' +
+      (c.groups && c.groups.length ? ' · ' + esc(c.groups.map(function (g) { return g.name || g.jid; }).join(', ')) : '') + '</div>' +
+      '<div class="meta"><select class="k2-country" aria-label="País">' + countryOptions(c.country, '') + '</select></div></div>' +
+      '<div class="acts"><button class="btn sm danger k2-del">Borrar</button></div></div>';
+  }
+  function loadContacts(reset) {
+    if (reset) k2Offset = 0;
+    var q = new URLSearchParams();
+    if ($('k2-q').value.trim()) q.set('q', $('k2-q').value.trim());
+    if ($('k2-group').value) q.set('group', $('k2-group').value);
+    if ($('k2-country').value) q.set('country', $('k2-country').value);
+    q.set('limit', '100'); q.set('offset', String(k2Offset));
+    api('contacts?' + q.toString()).then(function (j) {
+      if (!$('k2-country').options.length) $('k2-country').innerHTML = '<option value="">Todos los países</option><option value="-">Sin país</option>' +
+        COUNTRIES.map(function (c) { return '<option value="' + c.iso + '">' + esc(c.name) + '</option>'; }).join('');
+      $('k2-count').textContent = '(' + j.total + ')';
+      var html = j.contacts.map(contactRow).join('');
+      var filtered = q.has('q') || q.has('group') || q.has('country');
+      if (reset) $('k2-list').innerHTML = html || '<p class="muted center">' + (filtered ? 'Ningún contacto coincide.' : 'Todavía no hay contactos. Elige grupos arriba y pulsa Importar.') + '</p>';
+      else $('k2-list').insertAdjacentHTML('beforeend', html);
+      show('k2-more', k2Offset + j.contacts.length < j.total);
+    }).catch(errTo());
+  }
+  $('k2-q').addEventListener('input', function () { clearTimeout(k2Timer); k2Timer = setTimeout(function () { loadContacts(true); }, 300); });
+  ['k2-group', 'k2-country'].forEach(function (id) { $(id).addEventListener('change', function () { loadContacts(true); }); });
+  $('k2-more').addEventListener('click', function () { k2Offset += 100; loadContacts(false); });
+  $('k2-list').addEventListener('change', function (e) {
+    var el = e.target, it = el.closest('.item'); if (!it) return;
+    var body = { jid: it.dataset.jid };
+    if (el.classList.contains('k2-name')) { el.value = titleCase(el.value); if (!el.value) { toast('El nombre no puede quedar vacío.'); return; } body.name = el.value; }
+    else if (el.classList.contains('k2-country')) body.country = el.value;
+    else return;
+    api('contacts/edit', body).then(function () {
+      toast('Guardado.');
+      if (body.country !== undefined) { var t = it.querySelector('.t'), f = t.querySelector('.flag'); if (f) f.remove(); if (body.country) t.insertAdjacentHTML('afterbegin', flagSVG(body.country)); }
+    }).catch(errTo());
+  });
+  $('k2-list').addEventListener('click', function (e) {
+    var b = e.target.closest('.k2-del'); if (!b) return;
+    var it = b.closest('.item');
+    if (!confirm('¿Borrar este contacto? No se quita de la lista aprobada.')) return;
+    api('contacts/remove', { jid: it.dataset.jid }).then(function () { it.remove(); toast('Contacto borrado.'); }).catch(errTo());
+  });
+
+  // ---------- voice note transcription add-on ----------
+  var trTimer = null;
+  function loadTranscribe() {
+    clearTimeout(trTimer);
+    api('transcribe').then(function (j) {
+      var t = j.state || {}, rows = [];
+      if (!t.supported) {
+        rows.push(['Estado', 'Solo se instala en el servidor Windows']);
+        show('tr-install', false); show('tr-remove', false); show('tr-bar', false);
+      } else {
+        var state = t.installing ? 'Instalando… ' + t.percent + '%' : t.installed ? 'Instalada' : t.error ? 'No se pudo instalar' : 'No instalada';
+        rows.push(['Estado', state]);
+        if (t.installing && t.step) rows.push(['Paso', t.step]);
+        if (t.installed) rows.push(['Funciona con', t.device === 'cuda' ? 'Tarjeta gráfica NVIDIA (rápido)' : 'Procesador (más lento)']);
+        if (t.installed && t.device !== 'cuda' && t.detail) rows.push(['Por qué no la tarjeta', t.detail]);
+        rows.push(['Modelo', t.model || '']);
+        show('tr-bar', t.installing); $('tr-fill').style.width = (t.percent || 0) + '%';
+        show('tr-install', !t.installing); $('tr-install').textContent = t.installed ? 'Instalar otra vez' : 'Instalar transcripción';
+        show('tr-remove', t.installed && !t.installing);
+        $('tr-err').textContent = t.error || '';
+        if (t.installing && cur === 'ajustes') trTimer = setTimeout(loadTranscribe, 2000);
+      }
+      $('tr-kv').innerHTML = rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('');
+    }).catch(errTo('tr-err'));
+  }
+  $('tr-install').addEventListener('click', function () {
+    if (!confirm('Se descargan unos 3 GB en este servidor. Puede tardar un buen rato. ¿Empezar?')) return;
+    api('transcribe/install', {}).then(function () { toast('Instalando. Puedes seguir usando el panel.'); loadTranscribe(); }).catch(errTo('tr-err'));
+  });
+  $('tr-remove').addEventListener('click', function () {
+    if (!confirm('¿Quitar la transcripción? Se borran Python, las librerías y el modelo (unos 3 GB). Las notas ya transcritas se quedan.')) return;
+    api('transcribe/remove', {}).then(function () { toast('Transcripción quitada.'); loadTranscribe(); }).catch(errTo('tr-err'));
+  });
+
   // ---------- log ----------
   var ACTION_TEXT = {
     'message.send': 'Envío', 'media.download': 'Descarga de archivo', 'setting.change': 'Ajuste cambiado', 'approved.add': 'Añadido a la lista',
     'approved.remove': 'Quitado de la lista', 'session.logged_out': 'WhatsApp cerró la sesión', 'session.temporary_ban': 'Bloqueo temporal de WhatsApp', 'chat.meta': 'Categoría o país', 'session.paired': 'WhatsApp vinculado', 'session.unlinked': 'WhatsApp desvinculado',
     'panel.login': 'Entrada al panel', 'panel.show_key': 'Clave mostrada', 'history.import': 'Historial importado', 'cloud.request': 'Acceso desde la nube',
-    'cloud.denied': 'Nube: clave incorrecta', 'cloud.funnel_on': 'Funnel publicado', 'cloud.funnel_off': 'Funnel quitado', 'cloud.key_rotated': 'Clave de la nube cambiada', 'auth.denied': 'Acceso rechazado'
+    'cloud.denied': 'Nube: clave incorrecta', 'contacts.import': 'Contactos importados', 'contacts.group_add': 'Grupo elegido para contactos',
+    'contacts.group_remove': 'Grupo quitado de contactos', 'contact.edit': 'Contacto editado', 'contact.remove': 'Contacto borrado', 'group.members': 'Miembros de un grupo',
+    'media.read': 'Archivo abierto por Claude', 'history.request': 'Mensajes pedidos otra vez', 'transcribe.install': 'Instalación de transcripción', 'transcribe.remove': 'Transcripción quitada', 'cloud.funnel_on': 'Funnel publicado', 'cloud.funnel_off': 'Funnel quitado', 'cloud.key_rotated': 'Clave de la nube cambiada', 'auth.denied': 'Acceso rechazado'
   };
   function loadAudit() {
     var f = $('r-filter').value;
@@ -399,6 +561,8 @@
         if (a.details) {
           if (a.details.key) det = a.details.key + ': ' + JSON.stringify(a.details.old) + ' → ' + JSON.stringify(a.details.new);
           else if (a.details.category || a.details.country) det = ['category', 'country'].filter(function (k) { return a.details[k]; }).map(function (k) { return (k === 'category' ? 'categoría ' : 'país ') + (a.details[k].old || '—') + ' → ' + (a.details[k].new || '—'); }).join(', ');
+          else if (a.details.new_name || a.details.new_country) det = [a.details.new_name ? 'nombre ' + (a.details.old_name || '—') + ' → ' + a.details.new_name : '', a.details.new_country !== undefined ? 'país ' + (a.details.old_country || '—') + ' → ' + (a.details.new_country || '—') : ''].filter(Boolean).join(', ');
+          else if (a.action === 'contacts.import') det = a.details.groups + ' grupos: ' + a.details.new + ' nuevos, ' + a.details.updated + ' actualizados, ' + a.details.approved + ' a la lista aprobada';
           else if (a.details.error) det = a.details.error;
         }
         return '<tr><td>' + esc(fmtDate(a.at)) + '</td><td>' + esc(actorName(a.actor)) + '</td><td>' + esc(ACTION_TEXT[a.action] || a.action) + (det ? '<div class="muted small">' + esc(det) + '</div>' : '') +

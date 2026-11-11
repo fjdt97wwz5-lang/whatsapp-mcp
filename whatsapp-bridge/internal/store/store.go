@@ -58,6 +58,8 @@ type MediaInfo struct {
 	FileSHA256    []byte
 	FileEncSHA256 []byte
 	FileLength    uint64
+	DirectPath    string // used when the URL is missing (common in history syncs)
+	MimeType      string
 }
 
 // StoreChat inserts or updates a chat. The name is only replaced by a
@@ -91,33 +93,45 @@ func (s *Store) StoreMessage(ctx context.Context, m Message, mi MediaInfo) error
 	}
 	_, err := s.DB.ExecContext(ctx, `
 		INSERT INTO wa_messages (id, chat_jid, sender, content, timestamp, is_from_me,
-			media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+			media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length, direct_path, mime_type)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
 		ON CONFLICT (id, chat_jid) DO UPDATE SET
-			sender = EXCLUDED.sender, content = EXCLUDED.content, timestamp = EXCLUDED.timestamp,
-			is_from_me = EXCLUDED.is_from_me, media_type = EXCLUDED.media_type,
-			filename = EXCLUDED.filename, url = EXCLUDED.url, media_key = EXCLUDED.media_key,
-			file_sha256 = EXCLUDED.file_sha256, file_enc_sha256 = EXCLUDED.file_enc_sha256,
-			file_length = EXCLUDED.file_length`,
+			sender = EXCLUDED.sender,
+			content = COALESCE(NULLIF(EXCLUDED.content, ''), wa_messages.content),
+			timestamp = EXCLUDED.timestamp, is_from_me = EXCLUDED.is_from_me,
+			-- A later copy of the same message without its attachment (or with
+			-- less of it) never wipes what was stored first.
+			media_type = COALESCE(EXCLUDED.media_type, wa_messages.media_type),
+			filename = COALESCE(EXCLUDED.filename, wa_messages.filename),
+			url = COALESCE(EXCLUDED.url, wa_messages.url),
+			media_key = COALESCE(EXCLUDED.media_key, wa_messages.media_key),
+			file_sha256 = COALESCE(EXCLUDED.file_sha256, wa_messages.file_sha256),
+			file_enc_sha256 = COALESCE(EXCLUDED.file_enc_sha256, wa_messages.file_enc_sha256),
+			file_length = CASE WHEN EXCLUDED.file_length > 0 THEN EXCLUDED.file_length ELSE wa_messages.file_length END,
+			direct_path = COALESCE(EXCLUDED.direct_path, wa_messages.direct_path),
+			mime_type = COALESCE(EXCLUDED.mime_type, wa_messages.mime_type)`,
 		m.ID, m.ChatJID, m.Sender, m.Content, m.Timestamp, m.IsFromMe,
 		nullIfEmpty(mi.MediaType), nullIfEmpty(mi.Filename), nullIfEmpty(mi.URL),
-		mi.MediaKey, mi.FileSHA256, mi.FileEncSHA256, int64(mi.FileLength))
+		nilIfEmpty(mi.MediaKey), nilIfEmpty(mi.FileSHA256), nilIfEmpty(mi.FileEncSHA256), int64(mi.FileLength),
+		nullIfEmpty(mi.DirectPath), nullIfEmpty(mi.MimeType))
 	return err
 }
 
 // GetMediaInfo returns the download data of a message.
 func (s *Store) GetMediaInfo(ctx context.Context, id, chatJID string) (MediaInfo, error) {
 	var mi MediaInfo
-	var mt, fn, url sql.NullString
+	var mt, fn, url, dp, mime sql.NullString
 	var fl sql.NullInt64
 	err := s.DB.QueryRowContext(ctx, `
-		SELECT media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length
-		FROM wa_messages WHERE id = $1 AND chat_jid = $2`, id, chatJID).
-		Scan(&mt, &fn, &url, &mi.MediaKey, &mi.FileSHA256, &mi.FileEncSHA256, &fl)
+		SELECT media_type, filename, url, media_key, file_sha256, file_enc_sha256, file_length, direct_path, mime_type
+		FROM wa_messages WHERE id = $1 AND chat_jid = ANY($2) ORDER BY (chat_jid = $3) DESC LIMIT 1`,
+		id, s.ChatAliases(ctx, chatJID), chatJID).
+		Scan(&mt, &fn, &url, &mi.MediaKey, &mi.FileSHA256, &mi.FileEncSHA256, &fl, &dp, &mime)
 	if errors.Is(err, sql.ErrNoRows) {
 		return mi, fmt.Errorf("message %s not found in chat %s", id, chatJID)
 	}
 	mi.MediaType, mi.Filename, mi.URL, mi.FileLength = mt.String, fn.String, url.String, uint64(fl.Int64)
+	mi.DirectPath, mi.MimeType = dp.String, mime.String
 	return mi, err
 }
 
@@ -172,7 +186,8 @@ func (s *Store) ListMessages(ctx context.Context, f ListFilter) ([]Message, erro
 		add("m.sender = $%d", f.Sender)
 	}
 	if f.ChatJID != "" {
-		add("m.chat_jid = $%d", f.ChatJID)
+		// One person can have two chats: by phone number and by LID.
+		add("m.chat_jid = ANY($%d)", s.ChatAliases(ctx, f.ChatJID))
 	}
 	if f.Query != "" {
 		add("m.content ILIKE $%d", "%"+escapeLike(f.Query)+"%")
@@ -213,7 +228,7 @@ func (s *Store) GetMessageContext(ctx context.Context, id string, before, after 
 	mc := &MessageContext{Message: target[0]}
 	if before > 0 {
 		rows, err = s.DB.QueryContext(ctx, `SELECT `+msgCols+` FROM wa_messages m JOIN wa_chats c ON m.chat_jid = c.jid
-			WHERE m.chat_jid = $1 AND m.timestamp < $2 ORDER BY m.timestamp DESC LIMIT $3`, mc.Message.ChatJID, mc.Message.Timestamp, before)
+			WHERE m.chat_jid = ANY($1) AND m.timestamp < $2 ORDER BY m.timestamp DESC LIMIT $3`, s.ChatAliases(ctx, mc.Message.ChatJID), mc.Message.Timestamp, before)
 		if err != nil {
 			return nil, err
 		}
@@ -227,7 +242,7 @@ func (s *Store) GetMessageContext(ctx context.Context, id string, before, after 
 	}
 	if after > 0 {
 		rows, err = s.DB.QueryContext(ctx, `SELECT `+msgCols+` FROM wa_messages m JOIN wa_chats c ON m.chat_jid = c.jid
-			WHERE m.chat_jid = $1 AND m.timestamp > $2 ORDER BY m.timestamp ASC LIMIT $3`, mc.Message.ChatJID, mc.Message.Timestamp, after)
+			WHERE m.chat_jid = ANY($1) AND m.timestamp > $2 ORDER BY m.timestamp ASC LIMIT $3`, s.ChatAliases(ctx, mc.Message.ChatJID), mc.Message.Timestamp, after)
 		if err != nil {
 			return nil, err
 		}
@@ -413,4 +428,47 @@ func nullIfEmpty(s string) any {
 		return nil
 	}
 	return s
+}
+
+func nilIfEmpty(b []byte) any {
+	if len(b) == 0 {
+		return nil
+	}
+	return b
+}
+
+// ChatAliases returns the chat JID plus the other JID the same person is
+// known by (phone number <-> LID), from WhatsApp's own LID map. Groups and
+// unknown people return just the given JID.
+func (s *Store) ChatAliases(ctx context.Context, jid string) []string {
+	out := []string{jid}
+	user, server, ok := strings.Cut(jid, "@")
+	if !ok || user == "" {
+		return out
+	}
+	var q string
+	switch server {
+	case "lid":
+		q = `SELECT pn || '@s.whatsapp.net' FROM whatsmeow_lid_map WHERE lid = $1`
+	case "s.whatsapp.net":
+		q = `SELECT lid || '@lid' FROM whatsmeow_lid_map WHERE pn = $1`
+	default:
+		return out
+	}
+	var exists bool
+	if err := s.DB.QueryRowContext(ctx, `SELECT to_regclass('whatsmeow_lid_map') IS NOT NULL`).Scan(&exists); err != nil || !exists {
+		return out
+	}
+	rows, err := s.DB.QueryContext(ctx, q, user)
+	if err != nil {
+		return out
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var a string
+		if rows.Scan(&a) == nil && a != jid && !strings.HasPrefix(a, "@") {
+			out = append(out, a)
+		}
+	}
+	return out
 }

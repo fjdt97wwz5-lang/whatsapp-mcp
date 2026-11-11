@@ -24,6 +24,32 @@ by Claude through MCP tools. Settings marked hand-only (`send_only_to_approved`,
 `mcp_can_change_settings`, `cloud_access_enabled`, `panel_remote`) cannot be
 changed through MCP.
 
+## 2.0.6
+
+- Contacts from groups. Panel section "Contactos" and table `wa_contacts`
+  (+ `wa_contact_groups`, `contact_source_groups`, migration 5). The owner
+  picks groups and presses Import; members are resolved LID -> phone number
+  (participant PN, PN JID, whatsmeow LID map), saved with the profile name in
+  Title Case (editable, kept on re-import), country by prefix (editable) and
+  source groups. Optional `group_contacts_to_approved` (hand-only, default on)
+  adds new ones to the approved list. MCP tools `list_my_groups`,
+  `list_group_members`, `list_contacts`, `update_contact` (audited).
+- `read_attachment`: photos/stickers as MCP image content (downscaled to
+  1568 px JPEG), XLSX/CSV/TSV as tables, PDF/DOCX/text as text, voice notes
+  as a local transcript. Settings `read_media_enabled`, `read_media_max_mb`,
+  `transcribe_audio_enabled`, `transcribe_language`.
+- Voice transcription add-on, installed from the panel on Windows: embedded
+  Python 3.12 (NuGet, sha256-pinned) + pip `--require-hashes` (faster-whisper
+  1.2.1, CTranslate2, CUDA 12 cuBLAS/cuDNN wheels) + `large-v3-turbo` model.
+  CUDA float16 with CPU int8 fallback. Transcripts cached in
+  `media_transcripts` (migration 6).
+- Fix: attachments inside FutureProof wrappers (album children, group
+  mentions, spoilers, bot-forwarded...) were dropped; video notes and
+  stickers were not stored; a later copy without media wiped the stored media
+  data; reads by the phone JID missed messages stored under the LID chat.
+  `direct_path` and `mime_type` are now stored. `request_chat_history` and a
+  panel button ask the owner's phone for a chat's last messages again.
+
 ## 2.0.5
 
 - Cloud access gets its own Tailscale machine. The binary embeds tsnet
@@ -123,10 +149,10 @@ docs/GUIA.md             user guide (Spanish)
 ## Build
 
 ```
-installer/build.sh 2.0.5     # needs Go, makensis, python3, curl
+installer/build.sh 2.0.6     # needs Go, makensis, python3, curl
 ```
 
-Produces `dist/WhatsAppMCP-Setup-2.0.5.exe` plus macOS binaries for the
+Produces `dist/WhatsAppMCP-Setup-2.0.6.exe` plus macOS binaries for the
 `connect` helper. The installer bundles PostgreSQL 17 for Windows
 (zonky embedded-postgres-binaries, checksum-pinned) and the MSVC runtime DLLs.
 

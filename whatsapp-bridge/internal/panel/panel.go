@@ -26,9 +26,11 @@ import (
 	"rsc.io/qr"
 
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/config"
+	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/contacts"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/policy"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/sqlitemigrate"
 	mstore "github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/store"
+	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/transcribe"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/version"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/wa"
 )
@@ -45,6 +47,8 @@ type Deps struct {
 	Log          waLog.Logger
 	TailscaleIPs func() []net.IP
 	Cloud        CloudControl // nil when there is no cloud access
+	Contacts     *contacts.Importer
+	Transcriber  *transcribe.Manager
 }
 
 // CloudControl is what the panel can see and do about the cloud access.
@@ -204,7 +208,7 @@ func (p *Panel) linkLogin(w http.ResponseWriter, r *http.Request) {
 
 func validSection(s string) bool {
 	switch s {
-	case "inicio", "vincular", "conversaciones", "lista", "ajustes", "registro", "conectar", "importar":
+	case "inicio", "vincular", "conversaciones", "contactos", "lista", "ajustes", "registro", "conectar", "importar":
 		return true
 	}
 	return false
@@ -307,6 +311,26 @@ func (p *Panel) api(w http.ResponseWriter, r *http.Request, name string) {
 		p.cloudNodeOff(ctx, w, false)
 	case "cloud/node/forget POST":
 		p.cloudNodeOff(ctx, w, true)
+	case "contacts/groups GET":
+		p.contactGroups(ctx, w)
+	case "contacts/groups POST":
+		p.contactGroupSet(ctx, w, r)
+	case "contacts/import POST":
+		p.contactImport(ctx, w)
+	case "contacts GET":
+		p.contactList(ctx, w, r)
+	case "contacts/edit POST":
+		p.contactEdit(ctx, w, r)
+	case "contacts/remove POST":
+		p.contactRemove(ctx, w, r)
+	case "transcribe GET":
+		p.transcribeState(w)
+	case "transcribe/install POST":
+		p.transcribeInstall(ctx, w)
+	case "transcribe/remove POST":
+		p.transcribeRemove(ctx, w)
+	case "chats/history POST":
+		p.chatHistory(ctx, w, r)
 	default:
 		fail(w, http.StatusNotFound, "no existe")
 	}

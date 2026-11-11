@@ -69,6 +69,16 @@ var Defs = []Def{
 		Description: "Let Claude in the cloud reach the connector through Tailscale Funnel (needs the cloud key). Off = only Tailscale devices."},
 	{Key: "panel_remote", Kind: Bool, Default: false, LockedFromMCP: true,
 		Description: "Allow opening the web panel from other Tailscale devices (login with the access key). Off = only on the server itself."},
+	{Key: "group_contacts_to_approved", Kind: Bool, Default: true, LockedFromMCP: true,
+		Description: "When you import contacts from your chosen groups, also add them to the approved list. Can only be changed by hand."},
+	{Key: "read_media_enabled", Kind: Bool, Default: true,
+		Description: "Let Claude open received photos, Excel, CSV, PDF, Word and voice notes (read_attachment)."},
+	{Key: "read_media_max_mb", Kind: Int, Default: 25, Min: 1, Max: 500,
+		Description: "Largest attachment Claude may open, in MB."},
+	{Key: "transcribe_audio_enabled", Kind: Bool, Default: true,
+		Description: "Transcribe voice notes to text on this server (needs the transcription add-on installed from the panel)."},
+	{Key: "transcribe_language", Kind: String, Default: "auto",
+		Description: "Language of voice notes: auto, es or en."},
 }
 
 // DefByKey finds a definition.
@@ -95,6 +105,11 @@ type Settings struct {
 	PanelRemote           bool   `json:"panel_remote"`
 	ChatCategories        string `json:"chat_categories"`
 	CloudAccessEnabled    bool   `json:"cloud_access_enabled"`
+	GroupContactsApproved bool   `json:"group_contacts_to_approved"`
+	ReadMediaEnabled      bool   `json:"read_media_enabled"`
+	ReadMediaMaxMB        int    `json:"read_media_max_mb"`
+	TranscribeAudio       bool   `json:"transcribe_audio_enabled"`
+	TranscribeLanguage    string `json:"transcribe_language"`
 }
 
 // Actor identifies who did something, for the audit log.
@@ -248,6 +263,16 @@ func ParseValue(d Def, text string) (any, error) {
 		}
 		return n, nil
 	default:
+		if d.Key == "transcribe_language" {
+			t := strings.ToLower(strings.TrimSpace(text))
+			if t == "" {
+				t = "auto"
+			}
+			if t != "auto" && t != "es" && t != "en" {
+				return nil, errors.New("transcribe_language must be auto, es or en")
+			}
+			return t, nil
+		}
 		if d.Key == "attachments_folder" && text != "" {
 			abs, err := filepath.Abs(text)
 			if err != nil {

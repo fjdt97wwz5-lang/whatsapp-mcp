@@ -119,6 +119,56 @@ var migrations = []string{
 	);
 	CREATE INDEX IF NOT EXISTS chat_meta_category ON chat_meta (category);
 	CREATE INDEX IF NOT EXISTS chat_meta_country ON chat_meta (country);`,
+
+	// 5: contacts taken from the members of groups the owner picks, and the
+	// groups they came from. jid is the phone-number JID when WhatsApp shows
+	// the number, else the member's LID (number hidden).
+	`CREATE TABLE IF NOT EXISTS wa_contacts (
+		jid            TEXT PRIMARY KEY,
+		phone          TEXT NOT NULL DEFAULT '',
+		lid            TEXT NOT NULL DEFAULT '',
+		phone_hint     TEXT NOT NULL DEFAULT '',
+		name           TEXT NOT NULL DEFAULT '',
+		name_edited    BOOLEAN NOT NULL DEFAULT FALSE,
+		country        TEXT NOT NULL DEFAULT '',
+		country_edited BOOLEAN NOT NULL DEFAULT FALSE,
+		created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+		updated_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+		updated_by     TEXT NOT NULL DEFAULT ''
+	);
+	CREATE INDEX IF NOT EXISTS wa_contacts_lid ON wa_contacts (lid) WHERE lid <> '';
+	CREATE INDEX IF NOT EXISTS wa_contacts_phone ON wa_contacts (phone) WHERE phone <> '';
+	CREATE TABLE IF NOT EXISTS wa_contact_groups (
+		contact_jid TEXT NOT NULL REFERENCES wa_contacts(jid) ON DELETE CASCADE ON UPDATE CASCADE,
+		group_jid   TEXT NOT NULL,
+		group_name  TEXT NOT NULL DEFAULT '',
+		first_seen  TIMESTAMPTZ NOT NULL DEFAULT now(),
+		PRIMARY KEY (contact_jid, group_jid)
+	);
+	CREATE INDEX IF NOT EXISTS wa_contact_groups_group ON wa_contact_groups (group_jid);
+	CREATE TABLE IF NOT EXISTS contact_source_groups (
+		group_jid         TEXT PRIMARY KEY,
+		name              TEXT NOT NULL DEFAULT '',
+		selected_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+		selected_by       TEXT NOT NULL DEFAULT '',
+		last_import_at    TIMESTAMPTZ,
+		last_import_count INT NOT NULL DEFAULT 0
+	);`,
+
+	// 6: voice note transcripts, so each note is transcribed only once.
+	`CREATE TABLE IF NOT EXISTS media_transcripts (
+		message_id TEXT NOT NULL,
+		chat_jid   TEXT NOT NULL,
+		text       TEXT NOT NULL,
+		language   TEXT NOT NULL DEFAULT '',
+		model      TEXT NOT NULL DEFAULT '',
+		device     TEXT NOT NULL DEFAULT '',
+		seconds    REAL NOT NULL DEFAULT 0,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		PRIMARY KEY (message_id, chat_jid)
+	);
+	ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS direct_path TEXT;
+	ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS mime_type TEXT;`,
 }
 
 // Migrate applies pending application migrations inside transactions.

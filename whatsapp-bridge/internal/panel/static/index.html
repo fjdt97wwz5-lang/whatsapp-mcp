@@ -26,6 +26,7 @@
       <a href="#inicio" data-s="inicio"><i class="ic ic-home"></i><span>Inicio</span></a>
       <a href="#vincular" data-s="vincular"><i class="ic ic-link"></i><span>Vincular WhatsApp</span></a>
       <a href="#conversaciones" data-s="conversaciones"><i class="ic ic-chat"></i><span>Conversaciones</span></a>
+      <a href="#contactos" data-s="contactos"><i class="ic ic-people"></i><span>Contactos</span></a>
       <a href="#lista" data-s="lista"><i class="ic ic-check"></i><span>Lista aprobada</span></a>
       <a href="#ajustes" data-s="ajustes"><i class="ic ic-gear"></i><span>Ajustes</span></a>
       <a href="#registro" data-s="registro"><i class="ic ic-log"></i><span>Registro</span></a>
@@ -94,6 +95,29 @@
       </div>
     </section>
 
+    <section id="s-contactos" class="sec hidden">
+      <div class="card">
+        <h3>Grupos de donde sacar contactos</h3>
+        <p class="muted">Marca los grupos que quieras. Al pulsar <b>Importar</b> se guardan sus miembros como contactos, con el número real cuando WhatsApp lo deja ver. Solo pasa cuando pulsas el botón; los miembros nuevos no se añaden solos.</p>
+        <div class="toolbar"><input id="g-q" type="search" placeholder="Buscar grupo"><label class="chip"><input type="checkbox" id="g-only"> Solo los elegidos</label></div>
+        <div id="g-list" class="list glist"></div>
+        <p class="muted small" id="g-appr"></p>
+        <p class="row wrap"><button class="btn primary" id="g-import">Importar contactos de los grupos elegidos</button></p>
+        <div id="g-result"></div>
+        <p class="err" id="g-err"></p>
+      </div>
+      <div class="card">
+        <h3>Contactos guardados <span class="muted" id="k2-count"></span></h3>
+        <div class="toolbar">
+          <input id="k2-q" type="search" placeholder="Buscar por nombre o número">
+          <select id="k2-group"><option value="">Todos los grupos</option></select>
+          <select id="k2-country"></select>
+        </div>
+        <div id="k2-list" class="list"></div>
+        <div class="center"><button class="btn hidden" id="k2-more">Ver más</button></div>
+      </div>
+    </section>
+
     <section id="s-lista" class="sec hidden">
       <div class="card">
         <h3>Añadir un número</h3>
@@ -114,6 +138,15 @@
 
     <section id="s-ajustes" class="sec hidden">
       <div class="card"><div id="set-list"></div></div>
+      <div class="card">
+        <h3>Transcripción de notas de voz</h3>
+        <p class="muted">Convierte en texto las notas de voz para que Claude las lea. Se hace aquí en el servidor, con la tarjeta NVIDIA (o el procesador si la tarjeta no se puede usar). El audio no sale del servidor.</p>
+        <p class="muted small">La primera vez descarga unos 3 GB: Python (nuget.org), las librerías (pypi.org) y el modelo de voz (Hugging Face). Cada archivo se comprueba antes de usarlo.</p>
+        <dl class="kv" id="tr-kv"></dl>
+        <div class="bar hidden" id="tr-bar"><span id="tr-fill"></span></div>
+        <p class="row wrap"><button class="btn primary" id="tr-install">Instalar transcripción</button><button class="btn danger hidden" id="tr-remove">Quitar transcripción</button></p>
+        <p class="err" id="tr-err"></p>
+      </div>
     </section>
 
     <section id="s-registro" class="sec hidden">
@@ -125,6 +158,8 @@
             <option value="setting">Ajustes</option>
             <option value="approved">Lista aprobada</option>
             <option value="chat.meta">Categoría y país</option>
+            <option value="contact">Contactos</option>
+            <option value="media">Archivos leídos</option>
             <option value="session">Vinculación</option>
             <option value="panel">Panel</option>
             <option value="cloud">Acceso desde la nube</option>

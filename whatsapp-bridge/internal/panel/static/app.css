@@ -92,3 +92,10 @@ nav a{border-left:none;border-bottom:3px solid transparent;white-space:nowrap;pa
 .side-foot{display:none}.main{padding:16px}.grid4{grid-template-columns:repeat(2,1fr)}.kv{grid-template-columns:1fr}.item{grid-template-columns:36px 1fr}.acts{grid-column:2;flex-direction:row;align-items:center}}
 h4{margin:16px 0 4px;font-size:15px}
 details{margin-top:14px;border-top:1px solid var(--line,#ddd);padding-top:10px}details summary{cursor:pointer;color:var(--muted)}
+.ic-people{--m:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M9 11a4 4 0 110-8 4 4 0 010 8zm7.5 0a3.5 3.5 0 110-7 3.5 3.5 0 010 7zM1 20c0-3.3 3.6-6 8-6s8 2.7 8 6v1H1zm17 1v-1c0-1.9-.8-3.6-2.2-4.9 3.6.3 6.2 2.4 6.2 4.9v1z'/%3E%3C/svg%3E")}
+.glist{max-height:360px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:0 10px}
+.grow-item{display:flex;gap:12px;align-items:center;padding:9px 2px;border-top:1px solid var(--line);cursor:pointer}.grow-item:first-child{border-top:none}
+.grow-item .gn{font-weight:600}.grow-item .gs{color:var(--muted);font-size:13px;margin-left:auto;text-align:right}
+.bar{height:10px;border-radius:999px;background:var(--line);overflow:hidden;margin:10px 0}.bar span{display:block;height:100%;background:var(--accent);width:0;transition:width .4s}
+.k2-name{font-weight:600;border:1px solid transparent;background:transparent;padding:3px 6px;min-width:200px}.k2-name:hover,.k2-name:focus{border-color:var(--line);background:var(--card)}
+.hint{color:var(--amber)}

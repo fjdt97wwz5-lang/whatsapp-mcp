@@ -8,10 +8,12 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/config"
+	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/contacts"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/db"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/httpapi"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/logx"
@@ -19,6 +21,7 @@ import (
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/panel"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/policy"
 	mstore "github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/store"
+	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/transcribe"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/version"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/wa"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/winsvc"
@@ -146,10 +149,12 @@ func serve(ctx context.Context, cfgPath string, console io.Writer) error {
 			a.log.Warnf("could not save the new cloud key: %v", err)
 		}
 	}
-	cloud := httpapi.NewCloud(a.cfg, mcptools.NewServer(mcptools.Deps{Store: a.store, Policy: a.policy, Bridge: b, Actor: policy.ActorCloud}), a.policy, a.log.Sub("Cloud"))
+	tr := &transcribe.Manager{Dir: filepath.Join(a.cfg.DataDir, "transcribe"), Log: a.log.Sub("Transcribe")}
+	imp := &contacts.Importer{Store: a.store, Policy: a.policy, Groups: b}
+	cloud := httpapi.NewCloud(a.cfg, mcptools.NewServer(mcptools.Deps{Store: a.store, Policy: a.policy, Bridge: b, Actor: policy.ActorCloud, Transcriber: tr}), a.policy, a.log.Sub("Cloud"))
 	pnl := panel.New(panel.Deps{Cfg: a.cfg, Store: a.store, Policy: a.policy, Bridge: b, Log: a.log.Sub("Panel"),
-		TailscaleIPs: httpapi.TailscaleIPs, Cloud: cloud})
-	srv, err := httpapi.New(a.cfg, mcptools.NewServer(mcptools.Deps{Store: a.store, Policy: a.policy, Bridge: b}), b, a.policy, pnl, a.log.Sub("HTTP"))
+		TailscaleIPs: httpapi.TailscaleIPs, Cloud: cloud, Contacts: imp, Transcriber: tr})
+	srv, err := httpapi.New(a.cfg, mcptools.NewServer(mcptools.Deps{Store: a.store, Policy: a.policy, Bridge: b, Transcriber: tr}), b, a.policy, pnl, a.log.Sub("HTTP"))
 	if err != nil {
 		return err
 	}

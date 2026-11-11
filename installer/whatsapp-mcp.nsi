@@ -3,7 +3,7 @@
 
 Unicode true
 !ifndef VERSION
-  !define VERSION "2.0.5"
+  !define VERSION "2.0.6"
 !endif
 !ifndef STAGE
   !define STAGE "stage"
