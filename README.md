@@ -24,6 +24,23 @@ by Claude through MCP tools. Settings marked hand-only (`send_only_to_approved`,
 `mcp_can_change_settings`, `cloud_access_enabled`, `panel_remote`) cannot be
 changed through MCP.
 
+## 2.0.5
+
+- Cloud access gets its own Tailscale machine. The binary embeds tsnet
+  (tailscale.com v1.102.5) and joins the tailnet as `whatsapp-mcp` (name
+  editable), apart from the server's own Tailscale, then publishes the cloud
+  handler with `ListenFunnel(":443", FunnelOnly())` at
+  `https://whatsapp-mcp.<tailnet>.ts.net/mcp/k/<key>`. The label app's
+  Funnel on the server is not touched.
+- The auth key is pasted in the panel (Conectar Claude), used once to join
+  and never saved or logged; the node state lives in `DataDir\tsnet`.
+  Joining with a new key rotates the cloud key. Once published, the old
+  `:10000` Funnel on the server is withdrawn if it is ours.
+- Panel endpoints `cloud/node`, `cloud/node/off`, `cloud/node/forget`
+  (audited). The node starts with the service when `cloud_node_enabled` is
+  true. Tailscale's own log upload is off (`TS_NO_LOGS_NO_SUPPORT`).
+- Go 1.26.6 or newer is required to build.
+
 ## 2.0.4
 
 - Cloud access works through Tailscale Funnel. Funnel forwards the public
@@ -106,10 +123,10 @@ docs/GUIA.md             user guide (Spanish)
 ## Build
 
 ```
-installer/build.sh 2.0.4     # needs Go, makensis, python3, curl
+installer/build.sh 2.0.5     # needs Go, makensis, python3, curl
 ```
 
-Produces `dist/WhatsAppMCP-Setup-2.0.4.exe` plus macOS binaries for the
+Produces `dist/WhatsAppMCP-Setup-2.0.5.exe` plus macOS binaries for the
 `connect` helper. The installer bundles PostgreSQL 17 for Windows
 (zonky embedded-postgres-binaries, checksum-pinned) and the MSVC runtime DLLs.
 

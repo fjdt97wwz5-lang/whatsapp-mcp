@@ -419,23 +419,70 @@
       paintCloud(j.cloud);
     }).catch(errTo());
   }
-  var cloudURL = '', cloudShown = false, cloudFunnel = false;
+  var cloudURL = '', cloudShown = false, cloudFunnel = false, nodeTimer = null;
+  var nodeStates = {
+    off: 'Apagado', needs_key: 'Falta la clave de Tailscale', starting: 'Conectando…',
+    needs_approval: 'Esperando aprobación en la página de Tailscale (Machines > Approve)',
+    running: 'Publicado', error: 'Con problema'
+  };
   function paintCloud(c) {
     c = c || {}; cloudURL = c.url || ''; cloudShown = false; cloudFunnel = !!c.funnel;
     var masked = cloudURL ? cloudURL.replace(/\/k\/.*/, '/k/••••••••') : '';
-    var rows = [
-      ['Acceso desde la nube', c.enabled ? 'Encendido' : 'Apagado (enciéndelo en Ajustes)'],
-      ['Funnel', !c.funnel_known ? 'No se pudo consultar Tailscale' : (c.funnel ? 'Publicado en internet' : 'No publicado')],
-      ['Puerto local', (c.local_addr || '') + (c.listening ? '' : ' (sin escuchar)')],
-      ['Comando de Funnel', c.funnel_cmd || '']
-    ];
+    var nrows = [['Estado', nodeStates[c.node_state] || c.node_state || 'Apagado']];
+    if (c.node_dns) nrows.push(['Nombre en Tailscale', c.node_dns]);
+    nrows.push(['Unido a tu Tailscale', c.node_joined ? 'Sí (no hace falta clave para volver a encender)' : 'Todavía no']);
+    if (c.node_error) nrows.push(['Detalle', c.node_error]);
+    $('nd-kv').innerHTML = nrows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('');
+    if (document.activeElement !== $('nd-host')) $('nd-host').value = c.node_hostname || 'whatsapp-mcp';
+    $('nd-connect').textContent = c.node_joined ? 'Conectar / Encender' : 'Conectar';
+    show('nd-off', !!c.node_enabled); show('nd-forget', !!c.node_joined);
+
+    var rows = [['Acceso desde la nube', c.enabled ? 'Encendido' : 'Apagado (enciéndelo en Ajustes)']];
     if (cloudURL) rows.push(['Dirección para Claude', '<span id="cl-url">' + esc(masked) + '</span>']);
     if (c.note) rows.push(['Nota', c.note]);
     $('cl-kv').innerHTML = rows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + (r[0] === 'Dirección para Claude' ? r[1] : esc(r[1])) + '</dd>'; }).join('');
-    $('cl-funnel').textContent = c.funnel ? 'Quitar de Funnel' : 'Publicar en Funnel';
     show('cl-url-show', !!cloudURL); show('cl-url-copy', !!cloudURL);
     $('cl-url-show').textContent = 'Mostrar dirección';
+
+    var orows = [
+      ['Funnel :10000', !c.funnel_known ? 'No se pudo consultar Tailscale' : (c.funnel ? 'Publicado en internet' : 'No publicado')],
+      ['Puerto local', (c.local_addr || '') + (c.listening ? '' : ' (sin escuchar)')],
+      ['Comando de Funnel', c.funnel_cmd || '']
+    ];
+    if (c.node_enabled) orows.push(['Nota', 'Con la dirección propia encendida, este método no hace falta; el Funnel :10000 se quita solo al publicar.']);
+    $('cl-old-kv').innerHTML = orows.map(function (r) { return '<dt>' + esc(r[0]) + '</dt><dd>' + esc(r[1]) + '</dd>'; }).join('');
+    $('cl-funnel').textContent = c.funnel ? 'Quitar de Funnel :10000' : 'Publicar en Funnel :10000';
+    show('cl-funnel', !c.node_enabled || !!c.funnel);
+
+    clearTimeout(nodeTimer);
+    if (c.node_enabled && c.node_state !== 'running' && c.node_state !== 'needs_key') {
+      nodeTimer = setTimeout(function () { if (!$('s-conectar') || !$('s-conectar').classList.contains('hidden')) refreshCloud(); }, 3000);
+    }
   }
+  function refreshCloud() { api('connection').then(function (j) { paintCloud(j.cloud); }).catch(function () {}); }
+  function nodeConnect() {
+    var key = $('nd-key').value.trim(), host = $('nd-host').value.trim().toLowerCase();
+    $('cl-err').textContent = '';
+    if (key && key.indexOf('tskey-') !== 0) { $('cl-err').textContent = 'Eso no parece una clave de Tailscale (empieza por tskey-auth-).'; return; }
+    if (host && !/^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/.test(host)) { $('cl-err').textContent = 'El nombre solo puede tener letras minúsculas, números y guiones.'; return; }
+    if (key && !confirm('WhatsApp MCP entra a tu Tailscale como "' + (host || 'whatsapp-mcp') + '" y se publica en internet en el puerto 443, con una clave de la nube NUEVA (la dirección anterior deja de funcionar). El Funnel :10000 se quita solo. ¿Seguir?')) return;
+    var b = $('nd-connect'); b.disabled = true;
+    api('cloud/node', { auth_key: key, hostname: host }).then(function (j) {
+      $('nd-key').value = ''; paintCloud(j.cloud); toast(key ? 'Conectando con Tailscale. La clave de la nube es nueva.' : 'Encendiendo.');
+    }).catch(errTo('cl-err')).finally(function () { b.disabled = false; });
+  }
+  $('nd-form').addEventListener('submit', function (e) { e.preventDefault(); nodeConnect(); });
+  $('nd-connect').addEventListener('click', nodeConnect);
+  $('nd-host').addEventListener('input', function () { var p = this.selectionStart; this.value = this.value.toLowerCase().replace(/[^a-z0-9-]/g, ''); try { this.setSelectionRange(p, p); } catch (e) {} });
+  $('nd-off').addEventListener('click', function () {
+    if (!confirm('La dirección propia deja de responder hasta que pulses Conectar otra vez. ¿Apagar?')) return;
+    api('cloud/node/off', {}).then(function (j) { paintCloud(j.cloud); toast('Apagado.'); }).catch(errTo('cl-err'));
+  });
+  $('nd-forget').addEventListener('click', function () {
+    if (!confirm('El equipo sale de tu Tailscale y se borra su sesión. Para volver hará falta una clave nueva. Después bórralo también en la página de Tailscale (Machines). ¿Olvidar?')) return;
+    var b = this; b.disabled = true;
+    api('cloud/node/forget', {}).then(function (j) { paintCloud(j.cloud); toast('Equipo olvidado.'); }).catch(errTo('cl-err')).finally(function () { b.disabled = false; });
+  });
   $('cl-url-show').addEventListener('click', function () {
     cloudShown = !cloudShown; var el = $('cl-url'); if (!el) return;
     el.textContent = cloudShown ? cloudURL : cloudURL.replace(/\/k\/.*/, '/k/••••••••'); this.textContent = cloudShown ? 'Ocultar dirección' : 'Mostrar dirección';

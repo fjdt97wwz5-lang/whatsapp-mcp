@@ -143,21 +143,37 @@
         <pre id="k-cmd" class="code"></pre>
       </div>
       <div class="card">
-        <h3>Desde Claude en la nube (Tailscale Funnel)</h3>
+        <h3>Desde Claude en la nube</h3>
         <p class="muted">Permite que Claude use tu WhatsApp desde claude.ai y haga seguimientos automáticos, con una clave distinta a la de la Mac. Apagado por defecto.</p>
+        <h4>Dirección propia en Tailscale (recomendado)</h4>
+        <p class="muted small">WhatsApp MCP entra a tu Tailscale como un equipo aparte y se publica en el puerto normal de internet (443). No toca el Tailscale del servidor ni la app de etiquetas.</p>
+        <dl class="kv" id="nd-kv"></dl>
+        <form id="nd-form" class="row wrap" autocomplete="off">
+          <label class="field grow"><span>Clave De Tailscale (tskey-auth-…)</span><input id="nd-key" type="password" autocomplete="off" spellcheck="false" placeholder="Pégala aquí; no se guarda"></label>
+          <label class="field"><span>Nombre Del Equipo</span><input id="nd-host" maxlength="63" spellcheck="false" placeholder="whatsapp-mcp"></label>
+        </form>
+        <p class="row wrap">
+          <button class="btn primary" id="nd-connect">Conectar</button>
+          <button class="btn" id="nd-off">Apagar</button>
+          <button class="btn danger" id="nd-forget">Olvidar equipo</button>
+        </p>
         <dl class="kv" id="cl-kv"></dl>
         <p class="row wrap">
           <button class="btn" id="cl-url-show">Mostrar dirección</button>
           <button class="btn" id="cl-url-copy">Copiar dirección</button>
-          <button class="btn" id="cl-funnel"></button>
           <button class="btn danger" id="cl-rotate">Cambiar la clave de la nube</button>
         </p>
         <ol class="steps">
           <li>En <a href="#ajustes">Ajustes</a>, enciende <b>Acceso desde la nube</b>.</li>
-          <li>Pulsa <b>Publicar en Funnel</b> (o escribe el comando de arriba en PowerShell como administrador).</li>
+          <li>Crea la clave de Tailscale como dice la guía (GUIA.md, sección 2.0.5), pégala arriba y pulsa <b>Conectar</b>. Espera a que el estado diga <b>Publicado</b>.</li>
           <li>En claude.ai: <b>Configuración</b> &gt; <b>Conectores</b> &gt; <b>Añadir conector personalizado</b>. Nombre: WhatsApp. URL: pega la dirección copiada. Sin OAuth.</li>
-          <li>Para cortarlo al instante: apaga <b>Acceso desde la nube</b> o pulsa <b>Cambiar la clave de la nube</b>.</li>
+          <li>Para cortarlo al instante: apaga <b>Acceso desde la nube</b>, pulsa <b>Apagar</b> o pulsa <b>Cambiar la clave de la nube</b>.</li>
         </ol>
+        <details id="cl-old">
+          <summary>Método anterior: puerto 10000 del Tailscale del servidor</summary>
+          <dl class="kv" id="cl-old-kv"></dl>
+          <p class="row wrap"><button class="btn" id="cl-funnel"></button></p>
+        </details>
         <p class="err" id="cl-err"></p>
       </div>
     </section>

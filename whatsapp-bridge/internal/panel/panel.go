@@ -52,6 +52,9 @@ type CloudControl interface {
 	Info(ctx context.Context) CloudInfo
 	SetFunnel(ctx context.Context, on bool) error
 	RotateKey() (string, error)
+	NodeConnect(hostname, authKey string) error
+	NodeOff() error
+	NodeForget() error
 }
 
 // CloudInfo describes the Funnel access for the panel.
@@ -64,6 +67,14 @@ type CloudInfo struct {
 	Funnel      bool   `json:"funnel"`       // Funnel publishes the local port now
 	FunnelKnown bool   `json:"funnel_known"` // false when tailscale could not be asked
 	Note        string `json:"note,omitempty"`
+
+	// Own Tailscale machine (Funnel on 443).
+	NodeEnabled  bool   `json:"node_enabled"`
+	NodeHostname string `json:"node_hostname"`
+	NodeState    string `json:"node_state"` // off, needs_key, starting, needs_approval, running, error
+	NodeDNS      string `json:"node_dns,omitempty"`
+	NodeError    string `json:"node_error,omitempty"`
+	NodeJoined   bool   `json:"node_joined"` // already joined once (no key needed to switch on)
 }
 
 // Panel serves /panel/.
@@ -290,6 +301,12 @@ func (p *Panel) api(w http.ResponseWriter, r *http.Request, name string) {
 		p.cloudFunnel(ctx, w, r)
 	case "cloud/rotate POST":
 		p.cloudRotate(ctx, w)
+	case "cloud/node POST":
+		p.cloudNode(ctx, w, r)
+	case "cloud/node/off POST":
+		p.cloudNodeOff(ctx, w, false)
+	case "cloud/node/forget POST":
+		p.cloudNodeOff(ctx, w, true)
 	default:
 		fail(w, http.StatusNotFound, "no existe")
 	}
@@ -704,5 +721,54 @@ func (p *Panel) cloudRotate(ctx context.Context, w http.ResponseWriter) {
 		return
 	}
 	p.d.Policy.Audit(ctx, policy.ActorPanel, "cloud.key_rotated", "", "ok", nil)
+	writeJSON(w, 200, map[string]any{"ok": true, "cloud": p.d.Cloud.Info(ctx)})
+}
+
+// cloudNode switches the own Tailscale machine on. The auth key is used once
+// to join and is never saved or written to the log.
+func (p *Panel) cloudNode(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	if p.d.Cloud == nil {
+		fail(w, 404, "no disponible")
+		return
+	}
+	var body struct {
+		Hostname string `json:"hostname"`
+		AuthKey  string `json:"auth_key"`
+	}
+	if err := decode(r, &body); err != nil {
+		fail(w, 400, err.Error())
+		return
+	}
+	withKey := strings.TrimSpace(body.AuthKey) != ""
+	if err := p.d.Cloud.NodeConnect(body.Hostname, body.AuthKey); err != nil {
+		p.d.Policy.Audit(ctx, policy.ActorPanel, "cloud.node_on", "", "error", map[string]any{"error": err.Error()})
+		fail(w, 400, err.Error())
+		return
+	}
+	p.d.Policy.Audit(ctx, policy.ActorPanel, "cloud.node_on", "", "ok", map[string]any{"hostname": body.Hostname, "new_key": withKey})
+	if withKey {
+		p.d.Policy.Audit(ctx, policy.ActorPanel, "cloud.key_rotated", "", "ok", map[string]any{"reason": "own machine"})
+	}
+	writeJSON(w, 200, map[string]any{"ok": true, "cloud": p.d.Cloud.Info(ctx)})
+}
+
+func (p *Panel) cloudNodeOff(ctx context.Context, w http.ResponseWriter, forget bool) {
+	if p.d.Cloud == nil {
+		fail(w, 404, "no disponible")
+		return
+	}
+	action, err := "cloud.node_off", error(nil)
+	if forget {
+		action = "cloud.node_forget"
+		err = p.d.Cloud.NodeForget()
+	} else {
+		err = p.d.Cloud.NodeOff()
+	}
+	if err != nil {
+		p.d.Policy.Audit(ctx, policy.ActorPanel, action, "", "error", map[string]any{"error": err.Error()})
+		fail(w, 500, err.Error())
+		return
+	}
+	p.d.Policy.Audit(ctx, policy.ActorPanel, action, "", "ok", nil)
 	writeJSON(w, 200, map[string]any{"ok": true, "cloud": p.d.Cloud.Info(ctx)})
 }

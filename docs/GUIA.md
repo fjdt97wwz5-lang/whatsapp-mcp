@@ -1,14 +1,13 @@
-WhatsApp MCP 2.0.4 - Guía rápida
+WhatsApp MCP 2.0.5 - Guía rápida
 ================================
 
-IMPORTANTE después de actualizar a la 2.0.4:
-1. Abre el Panel de WhatsApp MCP > Conectar Claude y pulsa "Cambiar la clave
-   de la nube". La clave anterior salió en capturas de pantalla, así que hay
-   que cambiarla. La dirección vieja deja de servir en ese momento.
-2. Pulsa "Copiar dirección".
-3. En claude.ai, ve a Configuración > Conectores, abre tu conector de
-   WhatsApp, cambia la dirección por la nueva y guarda (o bórralo y vuelve a
-   añadirlo con la dirección nueva).
+IMPORTANTE después de actualizar a la 2.0.5:
+WhatsApp MCP ahora entra a tu Tailscale como un equipo aparte, con su
+propia dirección en el puerto normal de internet (443). Sigue la sección
+"7. Conectar Claude en la nube" paso a paso: primero creas una clave de
+Tailscale en la página de administración (paso A), luego la pegas en el
+panel (paso B) y al final cambias la dirección en claude.ai (paso C).
+No hace falta tocar nada del Tailscale del servidor ni de etiquetas.
 
 Qué es
 ------
@@ -16,8 +15,8 @@ Un conector que deja a Claude leer tus chats de WhatsApp y enviar mensajes,
 pero solo a los contactos y grupos que tú apruebes. Corre en el servidor
 Windows como un servicio que arranca solo. Los mensajes se guardan en una
 base de datos PostgreSQL privada, solo para WhatsApp. Se entra desde la Mac
-por Tailscale con una clave y, si lo enciendes, desde Claude en la nube por
-Tailscale Funnel con otra clave distinta.
+por Tailscale con una clave y, si lo enciendes, desde Claude en la nube con
+otra clave distinta, por una dirección propia de Tailscale.
 
 Todo se maneja desde el panel web: menú Inicio > WhatsApp MCP > Panel de
 WhatsApp MCP. Se abre en el navegador del servidor sin pedir clave (Windows
@@ -25,6 +24,20 @@ pide permiso de administrador).
 
 Usa un número secundario si puedes: WhatsApp no permite oficialmente este
 tipo de conexiones y podría bloquear el número.
+
+Novedades de la 2.0.5
+---------------------
+- Dirección propia para Claude en la nube. WhatsApp MCP aparece en tu
+  Tailscale como un equipo nuevo llamado "whatsapp-mcp" y se publica en
+  https://whatsapp-mcp.TU-TAILNET.ts.net (puerto 443, sin número al final).
+  La app de etiquetas y LeadsApp siguen igual: no se tocan.
+- La clave de Tailscale se pega en el panel, se usa una sola vez para entrar
+  y no se guarda.
+- Al conectar con una clave nueva, la clave de la nube se cambia sola, y
+  cuando la dirección nueva queda publicada se quita solo el Funnel viejo
+  del puerto 10000.
+- El método anterior (puerto 10000) sigue en el panel, plegado, por si lo
+  necesitas.
 
 Novedades de la 2.0.4
 ---------------------
@@ -67,7 +80,7 @@ Novedades de la 2.0.1
 
 1. Instalar o actualizar en el servidor Windows
 -----------------------------------------------
-1. Copia WhatsAppMCP-Setup-2.0.4.exe al servidor y ábrelo.
+1. Copia WhatsAppMCP-Setup-2.0.5.exe al servidor y ábrelo.
    Windows puede avisar "Windows protegió su PC" porque el instalador no
    está firmado: "Más información" > "Ejecutar de todas formas".
 2. Acepta el permiso de administrador y sigue los pasos.
@@ -182,37 +195,88 @@ Claude Desktop (Mac):
 3. Cierra y abre Claude Desktop.
 
 
-7. Conectar Claude en la nube (claude.ai) con Tailscale Funnel
---------------------------------------------------------------
+7. Conectar Claude en la nube (claude.ai)
+-----------------------------------------
 Sirve para que Claude use tu WhatsApp desde claude.ai (también desde el
 teléfono) y para seguimientos automáticos. Usa una clave distinta a la de
 la Mac. El panel y los ajustes "Solo a mano" nunca quedan en internet: por
 la nube solo se llega a las herramientas de Claude.
 
-Funnel solo permite los puertos 443, 8443 y 10000. Como 443 y 8443 ya los
-usan etiquetas y LeadsApp, este conector usa el 10000.
+WhatsApp MCP entra a tu Tailscale como un equipo aparte ("whatsapp-mcp") y
+se publica con Funnel en el puerto 443 de ese equipo. El Tailscale del
+servidor, la app de etiquetas y LeadsApp no se tocan.
 
-1. Panel > Ajustes: enciende "Acceso desde la nube (Tailscale Funnel)".
-2. Panel > Conectar Claude: pulsa "Publicar en Funnel".
-   (O, en PowerShell como administrador, el comando que sale ahí:
-     tailscale funnel --bg --https=10000 http://127.0.0.1:8767 )
-   Si el puerto 10000 de Funnel ya lo usa otra cosa, el panel no lo toca
-   y te lo dice; en ese caso no sigas, hay que repartir los puertos.
-3. Pulsa "Copiar dirección". Es algo como
-     https://NOMBRE-DEL-SERVIDOR.TU-TAILNET.ts.net:10000/mcp/k/CLAVE-DE-LA-NUBE
-   Trátala como una contraseña: quien la tenga puede usar el conector.
-4. En claude.ai: Configuración > Conectores > Añadir conector personalizado.
-   Nombre: WhatsApp. URL: pega la dirección. Deja vacíos los datos de OAuth.
-5. En un chat de claude.ai, activa el conector WhatsApp y prueba
-   "¿quién me escribió hoy y no le he respondido?".
+Paso A. Revisar Tailscale y crear la clave (en el navegador, una sola vez)
+   Entra a https://login.tailscale.com/admin con tu cuenta de Tailscale
+   (la misma del servidor). Necesitas ser dueño o administrador.
+   1. HTTPS encendido: menú DNS. En "HTTPS Certificates" debe decir que
+      está activado. Si no, pulsa "Enable HTTPS" y acepta. (Seguro ya está,
+      porque etiquetas usa Funnel.)
+   2. Permiso de Funnel: menú Access controls. Busca en el texto un bloque
+      "nodeAttrs" que tenga "autogroup:member" y "funnel", así:
+         "nodeAttrs": [
+           { "target": ["autogroup:member"], "attr": ["funnel"] }
+         ]
+      Si está, no cambies nada. Si no está, pulsa "Add Funnel to policy"
+      (o pega ese bloque) y guarda con "Save".
+      Ojo: si el bloque dice otra cosa en "target" (por ejemplo solo el
+      nombre del servidor de etiquetas), añade "autogroup:member" a la
+      lista o el equipo nuevo no podrá usar Funnel.
+   3. Crear la clave: menú Settings > Keys > "Generate auth key...".
+      - Description: whatsapp-mcp
+      - Reusable: apagado (se usa una sola vez)
+      - Expiration: 1 día basta (solo sirve para entrar la primera vez)
+      - Ephemeral: apagado (si lo enciendes, el equipo se borra solo)
+      - Pre-approved: enciéndelo si te aparece (solo sale si tu Tailscale
+        pide aprobar equipos nuevos)
+      - Tags: apagado
+      Pulsa "Generate key" y copia la clave (empieza por tskey-auth-).
+      Tailscale la muestra una sola vez. No la mandes por chat ni correo.
 
-Para cortarlo al instante: apaga "Acceso desde la nube" en Ajustes. Para que
-la dirección anterior deje de servir: "Cambiar la clave de la nube" (luego
-pega la nueva en claude.ai). "Quitar de Funnel" deja de publicar el puerto.
+Paso B. Pegar la clave en el panel (en el servidor)
+   1. Panel > Ajustes: "Acceso desde la nube" debe estar encendido.
+   2. Panel > Conectar Claude > "Dirección propia en Tailscale".
+      Pega la clave en "Clave De Tailscale". Deja el nombre "whatsapp-mcp".
+      Pulsa "Conectar" y acepta el aviso.
+   3. Espera a que "Estado" diga "Publicado" (unos segundos, a veces un par
+      de minutos). Si dice:
+      - "Esperando aprobación": en la página de Tailscale, menú Machines,
+        busca whatsapp-mcp y pulsa "Approve".
+      - "Con problema" y habla de HTTPS o de Funnel: revisa los puntos 1 y 2
+        del paso A. El panel reintenta solo cada 30 segundos.
+      - "Falta la clave": la clave venció, ya se usó o se copió mal. Crea
+        otra (paso A, punto 3) y vuelve a pegarla.
+   4. Cuando diga "Publicado": en la página de Tailscale, menú Machines,
+      abre el menú (...) del equipo whatsapp-mcp y elige "Disable key
+      expiry". Así no se desconecta solo en unos meses.
+   Al conectar pasan dos cosas solas: la clave de la nube se cambia por una
+   nueva (la dirección vieja deja de servir) y se quita el Funnel viejo del
+   puerto 10000 del servidor. El Funnel de etiquetas no se toca.
+
+Paso C. Poner la dirección nueva en claude.ai
+   1. Panel > Conectar Claude: pulsa "Copiar dirección". Es algo como
+        https://whatsapp-mcp.TU-TAILNET.ts.net/mcp/k/CLAVE-DE-LA-NUBE
+      (sin ":10000"). Trátala como una contraseña.
+   2. En claude.ai: Configuración > Conectores. Borra el conector WhatsApp
+      viejo y pulsa "Añadir conector personalizado". Nombre: WhatsApp.
+      URL: pega la dirección. Deja vacíos los datos de OAuth.
+   3. En un chat nuevo de claude.ai, activa el conector WhatsApp y prueba
+      "¿quién me escribió hoy y no le he respondido?".
+
+Para cortarlo al instante: apaga "Acceso desde la nube" en Ajustes, o pulsa
+"Apagar" en "Dirección propia". Para que la dirección deje de servir:
+"Cambiar la clave de la nube" (luego pega la nueva en claude.ai).
+"Olvidar equipo" saca a whatsapp-mcp de tu Tailscale y borra su sesión; para
+volver hace falta una clave nueva (y bórralo también en Machines).
+Al reiniciar el servidor, la dirección propia vuelve a encenderse sola.
 
 Límites de la nube: 240 llamadas por minuto; tras 20 claves equivocadas en
 10 minutos se pausa 10 minutos. Lo que haga Claude desde la nube sale en el
 Registro como "Claude (nube)".
+
+Método anterior (puerto 10000): sigue en Panel > Conectar Claude, plegado
+en "Método anterior". Publicaba en el puerto 10000 del Tailscale del
+servidor, pero claude.ai no llegaba a esa dirección.
 
 
 8. Lista aprobada y ajustes

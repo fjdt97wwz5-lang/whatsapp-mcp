@@ -77,6 +77,13 @@ type Config struct {
 	CloudPublicPort int    `json:"cloud_public_port"`
 	CloudKey        string `json:"cloud_key"`
 
+	// Own Tailscale machine for cloud access (2.0.5): WhatsApp MCP joins
+	// the tailnet as CloudNodeHostname and publishes MCP with Funnel on
+	// port 443, apart from the server's own Tailscale. Its state lives in
+	// DataDir/tsnet.
+	CloudNodeEnabled  bool   `json:"cloud_node_enabled"`
+	CloudNodeHostname string `json:"cloud_node_hostname"`
+
 	path string
 }
 
@@ -128,6 +135,8 @@ func Defaults(dataDir string) (*Config, error) {
 		CloudPort:       8767,
 		CloudPublicPort: 10000,
 		CloudKey:        cloud,
+
+		CloudNodeHostname: DefaultNodeHostname,
 	}, nil
 }
 
@@ -166,7 +175,30 @@ func (c *Config) fillNew() {
 	if c.CloudPublicPort == 0 {
 		c.CloudPublicPort = 10000
 	}
+	if c.CloudNodeHostname == "" {
+		c.CloudNodeHostname = DefaultNodeHostname
+	}
 }
+
+// DefaultNodeHostname is the Tailscale name of the cloud machine.
+const DefaultNodeHostname = "whatsapp-mcp"
+
+// ValidNodeHostname accepts a Tailscale machine name: lowercase letters,
+// digits and dashes, 1 to 63 characters, not starting or ending with a dash.
+func ValidNodeHostname(h string) bool {
+	if len(h) == 0 || len(h) > 63 || h[0] == '-' || h[len(h)-1] == '-' {
+		return false
+	}
+	for _, r := range h {
+		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// NodeDir is where the cloud machine keeps its Tailscale state.
+func (c *Config) NodeDir() string { return filepath.Join(c.DataDir, "tsnet") }
 
 // EnsureCloudKey makes a cloud key if there is none yet (configs from
 // 2.0.0) and reports whether the config changed.
@@ -249,6 +281,9 @@ func (c *Config) Validate() error {
 	}
 	if c.CloudKey != "" && len(c.CloudKey) < 32 {
 		return errors.New("cloud_key must be at least 32 characters")
+	}
+	if c.CloudNodeHostname != "" && !ValidNodeHostname(c.CloudNodeHostname) {
+		return errors.New("cloud_node_hostname must be lowercase letters, digits and dashes (1-63)")
 	}
 	return nil
 }

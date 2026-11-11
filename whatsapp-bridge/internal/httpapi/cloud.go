@@ -23,6 +23,7 @@ import (
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/config"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/panel"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/policy"
+	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/tsnode"
 )
 
 // Cloud serves MCP, and nothing else, to Claude in the cloud. It listens
@@ -46,6 +47,8 @@ type Cloud struct {
 	dnsMu   sync.Mutex
 	dnsName string
 	dnsAt   time.Time
+
+	node *tsnode.Node // own Tailscale machine (Funnel :443)
 }
 
 const (
@@ -61,8 +64,104 @@ func NewCloud(cfg *config.Config, mcpServer *mcp.Server, pol *policy.Policy, log
 	// cloudHostOK below does the check instead: loopback or a ts.net name.
 	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer },
 		&mcp.StreamableHTTPOptions{SessionTimeout: 2 * time.Hour, DisableLocalhostProtection: true})
-	return &Cloud{cfg: cfg, pol: pol, mcp: h, log: log, key: cfg.CloudKey}
+	c := &Cloud{cfg: cfg, pol: pol, mcp: h, log: log, key: cfg.CloudKey}
+	c.node = tsnode.New(cfg.NodeDir(), c, log.Sub("Node"), c.nodeRunning)
+	return c
 }
+
+// StartNode brings the own Tailscale machine up at service start when it
+// is switched on.
+func (c *Cloud) StartNode() {
+	c.mu.Lock()
+	on, host := c.cfg.CloudNodeEnabled, c.cfg.CloudNodeHostname
+	c.mu.Unlock()
+	if on {
+		c.node.Start(host, "")
+	}
+}
+
+// nodeRunning runs once the own machine is published: the old Funnel on
+// the server's port 10000 is no longer needed, so it is withdrawn.
+func (c *Cloud) nodeRunning(dns string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	on, err := c.funnelOn(ctx)
+	if err != nil || !on {
+		return
+	}
+	if err := c.SetFunnel(ctx, false); err != nil {
+		c.log.Warnf("could not withdraw the old Funnel on port %d: %v", c.cfg.CloudPublicPort, err)
+		c.pol.Audit(ctx, policy.ActorPanel, "cloud.funnel_off", "", "error", map[string]any{"reason": "own machine " + dns, "error": err.Error()})
+		return
+	}
+	c.log.Infof("Withdrew the old Funnel on port %d (now on %s)", c.cfg.CloudPublicPort, dns)
+	c.pol.Audit(ctx, policy.ActorPanel, "cloud.funnel_off", "", "ok", map[string]any{"reason": "own machine " + dns})
+}
+
+// NodeConnect switches the own machine on. With an auth key (first time or
+// to re-join) it also makes a new cloud key, so the new address starts
+// with a fresh key.
+func (c *Cloud) NodeConnect(hostname, authKey string) error {
+	hostname = strings.ToLower(strings.TrimSpace(hostname))
+	if hostname == "" {
+		hostname = config.DefaultNodeHostname
+	}
+	if !config.ValidNodeHostname(hostname) {
+		return errors.New("el nombre solo puede tener letras minúsculas, números y guiones (máximo 63)")
+	}
+	authKey = strings.TrimSpace(authKey)
+	if authKey != "" && (!strings.HasPrefix(authKey, "tskey-") || len(authKey) < 20 || strings.ContainsAny(authKey, " \t\r\n")) {
+		return errors.New("eso no parece una clave de Tailscale (empieza por tskey-auth-)")
+	}
+	if authKey == "" && !c.node.HasState() {
+		return errors.New("falta la clave de Tailscale: créala en la página de administración y pégala aquí")
+	}
+	c.mu.Lock()
+	oldOn, oldHost := c.cfg.CloudNodeEnabled, c.cfg.CloudNodeHostname
+	c.cfg.CloudNodeEnabled, c.cfg.CloudNodeHostname = true, hostname
+	err := c.cfg.Save(c.cfg.Path())
+	if err != nil {
+		c.cfg.CloudNodeEnabled, c.cfg.CloudNodeHostname = oldOn, oldHost
+	}
+	c.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if authKey != "" {
+		if _, err := c.RotateKey(); err != nil {
+			return fmt.Errorf("no se pudo cambiar la clave de la nube: %w", err)
+		}
+	}
+	c.node.Start(hostname, authKey)
+	return nil
+}
+
+// NodeOff switches the own machine off (it stays in the tailnet).
+func (c *Cloud) NodeOff() error {
+	c.node.Stop()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cfg.CloudNodeEnabled = false
+	return c.cfg.Save(c.cfg.Path())
+}
+
+// NodeForget signs the own machine out of the tailnet and deletes its
+// state; joining again needs a new auth key.
+func (c *Cloud) NodeForget() error {
+	c.mu.Lock()
+	host := c.cfg.CloudNodeHostname
+	c.mu.Unlock()
+	if err := c.node.Forget(host); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.cfg.CloudNodeEnabled = false
+	return c.cfg.Save(c.cfg.Path())
+}
+
+// StopNode shuts the machine down when the service stops.
+func (c *Cloud) StopNode() { c.node.Stop() }
 
 func (c *Cloud) addr() string { return net.JoinHostPort("127.0.0.1", strconv.Itoa(c.cfg.CloudPort)) }
 
@@ -390,11 +489,27 @@ func (c *Cloud) SetFunnel(ctx context.Context, on bool) error {
 func (c *Cloud) Info(ctx context.Context) panel.CloudInfo {
 	s, _ := c.pol.Settings(ctx)
 	c.mu.Lock()
-	info := panel.CloudInfo{Enabled: s.CloudAccessEnabled, Listening: c.listening, LocalAddr: c.addr(), FunnelCmd: c.funnelCmd()}
+	info := panel.CloudInfo{Enabled: s.CloudAccessEnabled, Listening: c.listening, LocalAddr: c.addr(), FunnelCmd: c.funnelCmd(),
+		NodeEnabled: c.cfg.CloudNodeEnabled, NodeHostname: c.cfg.CloudNodeHostname}
 	key, lerr := c.key, c.listenErr
 	c.mu.Unlock()
+	ni := c.node.Info()
+	info.NodeState, info.NodeDNS, info.NodeError, info.NodeJoined = ni.State, ni.DNSName, ni.Error, ni.HasState
+	if info.NodeEnabled && ni.State == tsnode.Off {
+		info.NodeState = tsnode.Starting
+	}
 	if lerr != "" {
 		info.Note = "No se pudo abrir el puerto local " + c.addr() + ": " + lerr
+	}
+	if info.NodeEnabled {
+		// The own machine is the way in; the old port 10000 is not offered.
+		if ni.State == tsnode.Running && ni.DNSName != "" && key != "" {
+			info.URL = fmt.Sprintf("https://%s/mcp/k/%s", ni.DNSName, key)
+		}
+		if on, err := c.funnelOn(ctx); err == nil {
+			info.Funnel, info.FunnelKnown = on, true
+		}
+		return info
 	}
 	if dns := c.dns(ctx); dns != "" && key != "" {
 		info.URL = fmt.Sprintf("https://%s:%d/mcp/k/%s", dns, c.cfg.CloudPublicPort, key)

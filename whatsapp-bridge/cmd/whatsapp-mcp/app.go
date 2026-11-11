@@ -154,6 +154,8 @@ func serve(ctx context.Context, cfgPath string, console io.Writer) error {
 		return err
 	}
 	go cloud.Run(ctx)
+	cloud.StartNode()
+	defer cloud.StopNode()
 	a.policy.Audit(ctx, policy.ActorSystem, "service.start", "", "ok", map[string]any{"version": version.Version})
 	srv.Run(ctx)
 	a.log.Infof("Stopping")
