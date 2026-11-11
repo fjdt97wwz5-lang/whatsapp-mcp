@@ -21,3 +21,20 @@ func TestOtherUse(t *testing.T) {
 		t.Fatal("another app on 10000 not detected")
 	}
 }
+
+func TestCloudHostOK(t *testing.T) {
+	for h, want := range map[string]bool{
+		"etiquestas4allfix.tailc67ea0.ts.net:10000": true,
+		"etiquestas4allfix.tailc67ea0.ts.net":       true,
+		"127.0.0.1:8767":                            true,
+		"[::1]:8767":                                true,
+		"localhost:8767":                            true,
+		"evil.example":                              false,
+		"ts.net.evil.example":                       false,
+		"192.168.1.5:8767":                          false,
+	} {
+		if got := cloudHostOK(h); got != want {
+			t.Errorf("cloudHostOK(%q) = %v, want %v", h, got, want)
+		}
+	}
+}

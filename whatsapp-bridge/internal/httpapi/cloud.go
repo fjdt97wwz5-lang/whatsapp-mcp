@@ -55,8 +55,12 @@ const (
 
 // NewCloud builds the cloud front door with its own MCP server.
 func NewCloud(cfg *config.Config, mcpServer *mcp.Server, pol *policy.Policy, log waLog.Logger) *Cloud {
+	// Tailscale Funnel forwards the public Host header
+	// (<name>.ts.net:<port>) to this 127.0.0.1 listener. The SDK's DNS
+	// rebinding guard rejects that with 403, so it is off here and
+	// cloudHostOK below does the check instead: loopback or a ts.net name.
 	h := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server { return mcpServer },
-		&mcp.StreamableHTTPOptions{SessionTimeout: 2 * time.Hour})
+		&mcp.StreamableHTTPOptions{SessionTimeout: 2 * time.Hour, DisableLocalhostProtection: true})
 	return &Cloud{cfg: cfg, pol: pol, mcp: h, log: log, key: cfg.CloudKey}
 }
 
@@ -128,6 +132,10 @@ func cloudJSON(w http.ResponseWriter, code int, msg string) {
 // with "Authorization: Bearer <cloud key>".
 func (c *Cloud) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if !cloudHostOK(r.Host) {
+		http.Error(w, "host not allowed", http.StatusForbidden)
+		return
+	}
 	ctx := r.Context()
 	s, err := c.pol.Settings(ctx)
 	if err != nil || !s.CloudAccessEnabled {
@@ -189,6 +197,21 @@ func (c *Cloud) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	r2.URL.RawPath = ""
 	r2.Header.Del("Authorization")
 	c.mcp.ServeHTTP(w, r2)
+}
+
+// cloudHostOK accepts the hosts a request can honestly carry here: the
+// Funnel name (anything under .ts.net) or a loopback address for local tests.
+func cloudHostOK(host string) bool {
+	h := host
+	if hh, _, err := net.SplitHostPort(host); err == nil {
+		h = hh
+	}
+	h = strings.TrimSuffix(strings.ToLower(h), ".")
+	if h == "localhost" || strings.HasSuffix(h, ".ts.net") {
+		return true
+	}
+	ip := net.ParseIP(strings.Trim(h, "[]"))
+	return ip != nil && ip.IsLoopback()
 }
 
 // RotateKey makes a new cloud key, saves it and returns it. The old
