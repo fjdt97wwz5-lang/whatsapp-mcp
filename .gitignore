@@ -5,3 +5,4 @@ whatsapp.log
 /installer/.work/
 /whatsapp-bridge/whatsapp-mcp
 /whatsapp-bridge/*.exe
+__pycache__/

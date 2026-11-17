@@ -189,6 +189,23 @@ func (p *Panel) transcribeInstall(ctx context.Context, w http.ResponseWriter) {
 	writeJSON(w, 200, map[string]any{"ok": true})
 }
 
+// transcribeRecheck tests the graphics card again (after a driver update).
+func (p *Panel) transcribeRecheck(ctx context.Context, w http.ResponseWriter) {
+	if p.d.Transcriber == nil {
+		fail(w, 400, "no disponible")
+		return
+	}
+	err := p.d.Transcriber.Recheck(ctx)
+	st := p.d.Transcriber.Status()
+	if err != nil {
+		p.d.Policy.Audit(ctx, policy.ActorPanel, "transcribe.recheck", "", "error", map[string]any{"error": err.Error()})
+		fail(w, 400, err.Error())
+		return
+	}
+	p.d.Policy.Audit(ctx, policy.ActorPanel, "transcribe.recheck", "", "ok", map[string]any{"device": st.Device, "driver": st.Driver})
+	writeJSON(w, 200, map[string]any{"ok": true, "state": st})
+}
+
 func (p *Panel) transcribeRemove(ctx context.Context, w http.ResponseWriter) {
 	if p.d.Transcriber == nil {
 		fail(w, 400, "no disponible")

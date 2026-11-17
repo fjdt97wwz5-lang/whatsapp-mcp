@@ -7,6 +7,8 @@
 #   worker.py check           load the model and report the device that works
 import json
 import os
+import shutil
+import subprocess
 import sys
 import time
 
@@ -73,11 +75,72 @@ def run(task):
     raise RuntimeError("; ".join(errors))
 
 
+def decode(path):
+    """Read any audio file (WhatsApp sends Opus in .ogg) as 16 kHz mono float32.
+
+    faster-whisper can do this itself, but its decoder passes an argument
+    (metadata_errors) that newer PyAV removed, so we decode here and hand it
+    the samples. This works with old and new PyAV alike."""
+    import av
+    import numpy as np
+    chunks = []
+    with av.open(path, mode="r") as container:
+        if not container.streams.audio:
+            raise RuntimeError("the file has no audio")
+        stream = container.streams.audio[0]
+        resampler = av.audio.resampler.AudioResampler(format="s16", layout="mono", rate=16000)
+
+        def add(frames):
+            if frames is None:
+                return
+            if not isinstance(frames, list):
+                frames = [frames]
+            for fr in frames:
+                chunks.append(fr.to_ndarray().reshape(-1))
+
+        for frame in container.decode(stream):
+            frame.pts = None
+            add(resampler.resample(frame))
+        add(resampler.resample(None))  # flush
+    if not chunks:
+        raise RuntimeError("the audio is empty")
+    return np.concatenate(chunks).astype(np.float32) / 32768.0
+
+
+def nvidia_driver():
+    """Driver version and card name as nvidia-smi reports them, or None."""
+    exe = shutil.which("nvidia-smi")
+    if not exe and os.name == "nt":
+        for c in (os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "nvidia-smi.exe"),
+                  r"C:\Program Files\NVIDIA Corporation\NVSMI\nvidia-smi.exe"):
+            if os.path.isfile(c):
+                exe = c
+                break
+    if not exe:
+        return None
+    try:
+        flags = 0x08000000 if os.name == "nt" else 0  # no console window
+        r = subprocess.run([exe, "--query-gpu=driver_version,name", "--format=csv,noheader"],
+                           capture_output=True, text=True, timeout=15, creationflags=flags)
+        line = (r.stdout or "").strip().splitlines()
+        if r.returncode != 0 or not line:
+            return None
+        parts = [p.strip() for p in line[0].split(",", 1)]
+        return {"version": parts[0], "name": parts[1] if len(parts) > 1 else ""}
+    except Exception as e:  # nvidia-smi missing or stuck
+        log("nvidia-smi: %s" % e)
+        return None
+
+
 def transcribe(path, lang):
     language = None if lang in ("", "auto") else lang
+    try:
+        audio = decode(path)
+    except Exception as e:
+        raise RuntimeError("could not read the audio file: %s" % e)
 
     def task(model):
-        segments, info = model.transcribe(path, language=language, beam_size=5, vad_filter=True)
+        segments, info = model.transcribe(audio, language=language, beam_size=5, vad_filter=True)
         parts = [s.text.strip() for s in segments]  # decoding happens here
         return {"text": " ".join(p for p in parts if p), "language": info.language,
                 "duration": round(float(info.duration or 0), 1)}
@@ -87,6 +150,9 @@ def transcribe(path, lang):
     res.update({"device": dev, "model": MODEL, "seconds": round(time.time() - t0, 1)})
     if errors:
         res["fallback"] = errors
+        drv = nvidia_driver()
+        if drv:
+            res["driver"] = drv
     out(res)
 
 
@@ -101,6 +167,9 @@ def check():
     res.update({"ok": True, "device": dev, "model": MODEL})
     if errors:
         res["fallback"] = errors
+    drv = nvidia_driver()
+    if drv:
+        res["driver"] = drv
     out(res)
 
 

@@ -15,12 +15,15 @@ import (
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/config"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/contacts"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/db"
+	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/ebay"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/httpapi"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/logx"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/mcptools"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/panel"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/policy"
+	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/secure"
 	mstore "github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/store"
+	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/style"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/transcribe"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/version"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/wa"
@@ -149,12 +152,24 @@ func serve(ctx context.Context, cfgPath string, console io.Writer) error {
 			a.log.Warnf("could not save the new cloud key: %v", err)
 		}
 	}
+	sty := &style.Store{DB: a.db}
+	go sty.Run(ctx, a.policy, a.log.Sub("Style"))
+	eb := &ebay.Service{DB: a.db, Policy: a.policy, Log: a.log.Sub("eBay"),
+		Graph: &ebay.Graph{TokenPath: filepath.Join(a.cfg.DataDir, "mail-token.json"), Lock: secure.LockFile},
+		Send: func(ctx context.Context, to, text string) (string, error) {
+			res, err := b.Send(ctx, wa.SendRequest{Recipient: to, Text: text}, policy.ActorEbay)
+			if err != nil {
+				return "", err
+			}
+			return res.MessageID, nil
+		}}
+	go eb.Run(ctx)
 	tr := &transcribe.Manager{Dir: filepath.Join(a.cfg.DataDir, "transcribe"), Log: a.log.Sub("Transcribe")}
 	imp := &contacts.Importer{Store: a.store, Policy: a.policy, Groups: b}
-	cloud := httpapi.NewCloud(a.cfg, mcptools.NewServer(mcptools.Deps{Store: a.store, Policy: a.policy, Bridge: b, Actor: policy.ActorCloud, Transcriber: tr}), a.policy, a.log.Sub("Cloud"))
+	cloud := httpapi.NewCloud(a.cfg, mcptools.NewServer(mcptools.Deps{Store: a.store, Policy: a.policy, Bridge: b, Actor: policy.ActorCloud, Transcriber: tr, Style: sty}), a.policy, a.log.Sub("Cloud"))
 	pnl := panel.New(panel.Deps{Cfg: a.cfg, Store: a.store, Policy: a.policy, Bridge: b, Log: a.log.Sub("Panel"),
-		TailscaleIPs: httpapi.TailscaleIPs, Cloud: cloud, Contacts: imp, Transcriber: tr})
-	srv, err := httpapi.New(a.cfg, mcptools.NewServer(mcptools.Deps{Store: a.store, Policy: a.policy, Bridge: b, Transcriber: tr}), b, a.policy, pnl, a.log.Sub("HTTP"))
+		TailscaleIPs: httpapi.TailscaleIPs, Cloud: cloud, Contacts: imp, Transcriber: tr, Style: sty, Ebay: eb})
+	srv, err := httpapi.New(a.cfg, mcptools.NewServer(mcptools.Deps{Store: a.store, Policy: a.policy, Bridge: b, Transcriber: tr, Style: sty}), b, a.policy, pnl, a.log.Sub("HTTP"))
 	if err != nil {
 		return err
 	}

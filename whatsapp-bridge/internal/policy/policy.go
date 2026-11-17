@@ -79,6 +79,28 @@ var Defs = []Def{
 		Description: "Transcribe voice notes to text on this server (needs the transcription add-on installed from the panel)."},
 	{Key: "transcribe_language", Kind: String, Default: "auto",
 		Description: "Language of voice notes: auto, es or en."},
+	{Key: "writing_style_enabled", Kind: Bool, Default: true,
+		Description: "Learn how the owner writes from his sent messages and let Claude read it (get_writing_style) before drafting."},
+	{Key: "writing_style_relearn_days", Kind: Int, Default: 7, Min: 1, Max: 90,
+		Description: "Learn the writing style again every this many days."},
+	{Key: "ebay_alerts_enabled", Kind: Bool, Default: false, LockedFromMCP: true,
+		Description: "Read the eBay sale e-mails in Microsoft 365 and send a WhatsApp notice and a reminder to the chat in ebay_alert_chat. Can only be changed by hand."},
+	{Key: "ebay_alert_chat", Kind: String, Default: "206347995996329@lid", LockedFromMCP: true,
+		Description: "WhatsApp chat that gets the eBay sale notices and reminders (must be on the approved list). Can only be changed by hand."},
+	{Key: "ebay_mailbox", Kind: String, Default: "", LockedFromMCP: true,
+		Description: "Mailbox to read (empty = the mailbox of the Microsoft account you connected; or a shared mailbox address). Can only be changed by hand."},
+	{Key: "ebay_reminder_minutes", Kind: Int, Default: 120, Min: 0, Max: 1440,
+		Description: "Send the reminder this many minutes after the notice (0 = no reminder)."},
+	{Key: "ebay_cutoff_time", Kind: String, Default: "17:00",
+		Description: "Time (HH:MM, ebay_timezone) Ana leaves for USPS: reminders that would fall later go all together at this time."},
+	{Key: "ebay_timezone", Kind: String, Default: "America/New_York",
+		Description: "Time zone for ebay_cutoff_time."},
+	{Key: "ebay_poll_minutes", Kind: Int, Default: 2, Min: 1, Max: 60,
+		Description: "How often to look for new eBay sale e-mails, in minutes."},
+	{Key: "ebay_notice_text", Kind: String, Default: "Hola Ana, llegó una venta de eBay:\n{ventas}\nGracias.",
+		Description: "Text of the notice. {ventas} is replaced by one line per sale."},
+	{Key: "ebay_reminder_text", Kind: String, Default: "Hola Ana, te recuerdo estas ventas de eBay:\n{ventas}\nNo se te olvide ir a llevarlo a USPS antes de las {hora}. Gracias.",
+		Description: "Text of the reminder. {ventas} is one line per sale, {hora} the cutoff time."},
 }
 
 // DefByKey finds a definition.
@@ -110,6 +132,17 @@ type Settings struct {
 	ReadMediaMaxMB        int    `json:"read_media_max_mb"`
 	TranscribeAudio       bool   `json:"transcribe_audio_enabled"`
 	TranscribeLanguage    string `json:"transcribe_language"`
+	WritingStyleEnabled   bool   `json:"writing_style_enabled"`
+	WritingStyleDays      int    `json:"writing_style_relearn_days"`
+	EbayAlertsEnabled     bool   `json:"ebay_alerts_enabled"`
+	EbayAlertChat         string `json:"ebay_alert_chat"`
+	EbayMailbox           string `json:"ebay_mailbox"`
+	EbayReminderMinutes   int    `json:"ebay_reminder_minutes"`
+	EbayCutoffTime        string `json:"ebay_cutoff_time"`
+	EbayTimezone          string `json:"ebay_timezone"`
+	EbayPollMinutes       int    `json:"ebay_poll_minutes"`
+	EbayNoticeText        string `json:"ebay_notice_text"`
+	EbayReminderText      string `json:"ebay_reminder_text"`
 }
 
 // Actor identifies who did something, for the audit log.
@@ -121,6 +154,7 @@ const (
 	ActorREST      = "rest"      // REST API caller
 	ActorInstaller = "installer" // setup
 	ActorSystem    = "system"
+	ActorEbay      = "ebay" // the automatic eBay sale alerts
 )
 
 // Policy is the rules engine.
@@ -272,6 +306,39 @@ func ParseValue(d Def, text string) (any, error) {
 				return nil, errors.New("transcribe_language must be auto, es or en")
 			}
 			return t, nil
+		}
+		switch d.Key {
+		case "ebay_cutoff_time":
+			t, err := time.Parse("15:04", text)
+			if err != nil {
+				return nil, errors.New("ebay_cutoff_time must be a time like 17:00")
+			}
+			return t.Format("15:04"), nil
+		case "ebay_timezone":
+			if _, err := time.LoadLocation(text); err != nil || text == "" {
+				return nil, errors.New("ebay_timezone must be a time zone like America/New_York")
+			}
+			return text, nil
+		case "ebay_mailbox":
+			if text != "" && (!strings.Contains(text, "@") || strings.ContainsAny(text, " /?#'\"")) {
+				return nil, errors.New("ebay_mailbox must be an e-mail address or empty")
+			}
+			return strings.ToLower(text), nil
+		case "ebay_alert_chat":
+			canon, _, err := NormalizeRecipient(text)
+			if err != nil {
+				return nil, err
+			}
+			return canon, nil
+		case "ebay_notice_text", "ebay_reminder_text":
+			text = strings.ReplaceAll(text, "\r\n", "\n")
+			if !strings.Contains(text, "{ventas}") {
+				return nil, errors.New("the text must contain {ventas}")
+			}
+			if len([]rune(text)) > 1000 {
+				return nil, errors.New("the text is too long (1000 characters at most)")
+			}
+			return text, nil
 		}
 		if d.Key == "attachments_folder" && text != "" {
 			abs, err := filepath.Abs(text)

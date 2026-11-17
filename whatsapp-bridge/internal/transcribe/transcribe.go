@@ -65,6 +65,8 @@ type State struct {
 	Device     string `json:"device,omitempty"` // cuda or cpu, from the last check
 	Model      string `json:"model"`
 	Detail     string `json:"detail,omitempty"`
+	Driver     string `json:"driver,omitempty"` // NVIDIA driver version and card
+	Checking   bool   `json:"checking,omitempty"`
 }
 
 // Manager installs and runs the transcription add-on.
@@ -88,6 +90,8 @@ type installedInfo struct {
 	Model   string    `json:"model"`
 	Device  string    `json:"device"`
 	Detail  string    `json:"detail,omitempty"`
+	Driver  string    `json:"driver,omitempty"`
+	Plain   bool      `json:"plain,omitempty"` // Detail is already in plain Spanish (2.0.7+)
 	At      time.Time `json:"at"`
 	Version int       `json:"version"`
 }
@@ -133,7 +137,10 @@ func (m *Manager) Status() State {
 	st.Model = Model
 	if !st.Installing {
 		if ii, ok := m.readMarker(); ok {
-			st.Installed, st.Device, st.Detail = true, ii.Device, ii.Detail
+			st.Installed, st.Device, st.Detail, st.Driver = true, ii.Device, ii.Detail, ii.Driver
+			if !ii.Plain && ii.Device != "cuda" {
+				st.Detail = ExplainGPU(ii.Detail, "") // marker from 2.0.6
+			}
 			if st.Error == "" {
 				st.Percent = 100
 			}
@@ -221,24 +228,98 @@ func (m *Manager) install(ctx context.Context) error {
 	}
 	m.set(80, "Descargando el modelo de voz (1,6 GB)")
 	stop := m.watchModelSize(80, 96)
-	_, err := m.runWorker(ctx, false, "download")
+	_, err := m.runWorker(ctx, false, nil, "download")
 	stop()
 	if err != nil {
 		return fmt.Errorf("descargar el modelo: %w", err)
 	}
 	m.set(97, "Probando la tarjeta gráfica")
-	res, err := m.runWorker(ctx, true, "check")
+	return m.checkAndMark(ctx)
+}
+
+// checkAndMark runs the worker's self test (GPU first, then CPU) and records
+// which one works, with a plain explanation when the GPU can't be used.
+func (m *Manager) checkAndMark(ctx context.Context) error {
+	res, err := m.runWorker(ctx, true, nil, "check")
 	if err != nil {
 		return fmt.Errorf("probar la transcripción: %w", err)
 	}
 	dev, _ := res["device"].(string)
-	detail := ""
+	raw := ""
 	if fb, ok := res["fallback"].([]any); ok && len(fb) > 0 {
-		detail = fmt.Sprint(fb[0])
+		raw = fmt.Sprint(fb[0])
 	}
-	ii := installedInfo{Python: PythonVersion, Model: Model, Device: dev, Detail: detail, At: time.Now(), Version: installVersion}
+	drv := driverText(res["driver"])
+	detail := ""
+	if dev != "cuda" {
+		detail = ExplainGPU(raw, drv)
+	}
+	ii := installedInfo{Python: PythonVersion, Model: Model, Device: dev, Detail: detail, Driver: drv, Plain: true, At: time.Now(), Version: installVersion}
 	b, _ := json.MarshalIndent(ii, "", "  ")
 	return os.WriteFile(m.markerPath(), b, 0o600)
+}
+
+// Recheck tests the graphics card again, for after a driver update, without
+// reinstalling anything.
+func (m *Manager) Recheck(ctx context.Context) error {
+	if !m.Installed() {
+		return ErrNotInstalled
+	}
+	m.mu.Lock()
+	if m.st.Installing || m.st.Checking {
+		m.mu.Unlock()
+		return errors.New("ya se está probando o instalando")
+	}
+	m.st.Checking = true
+	m.mu.Unlock()
+	defer func() { m.mu.Lock(); m.st.Checking = false; m.mu.Unlock() }()
+	m.run.Lock()
+	defer m.run.Unlock()
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Minute)
+	defer cancel()
+	return m.checkAndMark(ctx)
+}
+
+func driverText(v any) string {
+	d, ok := v.(map[string]any)
+	if !ok {
+		return ""
+	}
+	ver, _ := d["version"].(string)
+	name, _ := d["name"].(string)
+	if ver == "" {
+		return ""
+	}
+	if name != "" {
+		return name + ", driver " + ver
+	}
+	return "driver " + ver
+}
+
+// ExplainGPU turns the GPU error into a sentence the owner can act on.
+func ExplainGPU(raw, driver string) string {
+	l := strings.ToLower(raw)
+	switch {
+	case raw == "" && driver == "":
+		return "No se encontró una tarjeta NVIDIA que se pueda usar."
+	case strings.Contains(l, "driver version is insufficient") || strings.Contains(l, "driver is insufficient") ||
+		(strings.Contains(l, "driver") && (strings.Contains(l, "old") || strings.Contains(l, "insufficient") || strings.Contains(l, "version"))):
+		s := "El driver de NVIDIA es muy viejo para la transcripción con la tarjeta"
+		if driver != "" {
+			s += " (" + driver + ")"
+		}
+		return s + ". Actualízalo con la app de NVIDIA o desde nvidia.com (driver Game Ready o Studio más reciente), reinicia el server y pulsa \"Probar la tarjeta otra vez\". Mientras tanto se usa el procesador."
+	case strings.Contains(l, "out of memory"):
+		return "La tarjeta no tenía memoria libre (otro programa la está usando). Se usa el procesador."
+	case strings.Contains(l, "cudnn") || strings.Contains(l, "cublas") || strings.Contains(l, ".dll"):
+		return "Faltan piezas de NVIDIA en la instalación. Pulsa \"Instalar otra vez\". Mientras tanto se usa el procesador."
+	case strings.Contains(l, "no cuda") || strings.Contains(l, "cuda-capable device") || strings.Contains(l, "no device"):
+		return "Windows no ve la tarjeta NVIDIA. Revisa que el driver esté instalado. Se usa el procesador."
+	}
+	if driver != "" {
+		return "La tarjeta (" + driver + ") no funcionó: " + raw
+	}
+	return "La tarjeta no funcionó: " + raw
 }
 
 // download fetches url into dst, checks its SHA-256 and reports progress
@@ -484,12 +565,12 @@ func (m *Manager) env(offline bool) []string {
 }
 
 // runWorker runs worker.py once and returns its JSON answer.
-func (m *Manager) runWorker(ctx context.Context, offline bool, args ...string) (map[string]any, error) {
+func (m *Manager) runWorker(ctx context.Context, offline bool, extraEnv []string, args ...string) (map[string]any, error) {
 	if err := m.writeWorker(); err != nil {
 		return nil, err
 	}
 	cmd := exec.CommandContext(ctx, m.python(), append([]string{"-I", m.workerPath()}, args...)...)
-	cmd.Env = m.env(offline)
+	cmd.Env = append(m.env(offline), extraEnv...)
 	cmd.Dir = m.Dir
 	hideWindow(cmd)
 	var stdout, stderr bytes.Buffer
@@ -534,7 +615,13 @@ func (m *Manager) Transcribe(ctx context.Context, path, lang string) (*Result, e
 	defer m.run.Unlock()
 	ctx, cancel := context.WithTimeout(ctx, 15*time.Minute)
 	defer cancel()
-	res, err := m.runWorker(ctx, true, "transcribe", path, lang)
+	// When the last test found the card unusable, go straight to the
+	// processor instead of failing on the card first every time.
+	var extra []string
+	if ii, ok := m.readMarker(); ok && ii.Device == "cpu" {
+		extra = []string{"WHISPER_DEVICE=cpu"}
+	}
+	res, err := m.runWorker(ctx, true, extra, "transcribe", path, lang)
 	if err != nil {
 		return nil, fmt.Errorf("transcription failed: %w", err)
 	}

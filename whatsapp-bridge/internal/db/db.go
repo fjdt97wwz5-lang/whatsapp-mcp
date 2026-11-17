@@ -169,6 +169,58 @@ var migrations = []string{
 	);
 	ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS direct_path TEXT;
 	ALTER TABLE wa_messages ADD COLUMN IF NOT EXISTS mime_type TEXT;`,
+
+	// 7: the owner's writing style (learned from his own sent messages) and
+	// the eBay sale alerts.
+	`CREATE TABLE IF NOT EXISTS writing_style (
+		id            INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+		profile       JSONB NOT NULL DEFAULT '{}',
+		notes         TEXT NOT NULL DEFAULT '',
+		learned_at    TIMESTAMPTZ,
+		messages_used INT NOT NULL DEFAULT 0,
+		updated_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+		updated_by    TEXT NOT NULL DEFAULT ''
+	);
+	CREATE TABLE IF NOT EXISTS writing_corrections (
+		id         BIGSERIAL PRIMARY KEY,
+		created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+		actor      TEXT NOT NULL,
+		chat       TEXT NOT NULL DEFAULT '',
+		draft      TEXT NOT NULL DEFAULT '',
+		final      TEXT NOT NULL,
+		note       TEXT NOT NULL DEFAULT ''
+	);
+	CREATE TABLE IF NOT EXISTS ebay_sales (
+		mail_id        TEXT PRIMARY KEY,
+		received_at    TIMESTAMPTZ NOT NULL,
+		subject        TEXT NOT NULL DEFAULT '',
+		item           TEXT NOT NULL DEFAULT '',
+		quantity       INT NOT NULL DEFAULT 1,
+		buyer_place    TEXT NOT NULL DEFAULT '',
+		ship_by        TEXT NOT NULL DEFAULT '',
+		order_number   TEXT NOT NULL DEFAULT '',
+		recipient      TEXT NOT NULL DEFAULT '',
+		notified_at    TIMESTAMPTZ,
+		notify_msg_id  TEXT NOT NULL DEFAULT '',
+		notify_error   TEXT NOT NULL DEFAULT '',
+		remind_due     TIMESTAMPTZ,
+		reminded_at    TIMESTAMPTZ,
+		remind_msg_id  TEXT NOT NULL DEFAULT '',
+		remind_error   TEXT NOT NULL DEFAULT '',
+		created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+	);
+	CREATE INDEX IF NOT EXISTS ebay_sales_due ON ebay_sales (remind_due) WHERE reminded_at IS NULL;
+	CREATE TABLE IF NOT EXISTS mail_link (
+		id           INT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+		client_id    TEXT NOT NULL DEFAULT '',
+		tenant       TEXT NOT NULL DEFAULT '',
+		account      TEXT NOT NULL DEFAULT '',
+		connected_at TIMESTAMPTZ,
+		watch_since  TIMESTAMPTZ,
+		last_poll_at TIMESTAMPTZ,
+		last_error   TEXT NOT NULL DEFAULT '',
+		updated_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+	);`,
 }
 
 // Migrate applies pending application migrations inside transactions.

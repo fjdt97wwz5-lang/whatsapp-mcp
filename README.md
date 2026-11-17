@@ -21,8 +21,45 @@ Spanish user guide: [docs/GUIA.md](docs/GUIA.md).
 
 Settings live in the database and can be changed by hand (web panel, CLI/menu) or
 by Claude through MCP tools. Settings marked hand-only (`send_only_to_approved`,
-`mcp_can_change_settings`, `cloud_access_enabled`, `panel_remote`) cannot be
+`mcp_can_change_settings`, `cloud_access_enabled`, `panel_remote`,
+`ebay_alerts_enabled`, `ebay_alert_chat`, `ebay_mailbox`) cannot be
 changed through MCP.
+
+## 2.0.7
+
+- Writing style. Package `internal/style` learns how the owner writes from
+  their own sent WhatsApp messages (last 18 months, up to 30000; automatic
+  eBay messages excluded): length, bursts, capitals/punctuation, ¿ ¡, emojis,
+  laughs, tú/usted, Spanish/English, greetings, sign-offs, quick replies,
+  repeated phrases and a few examples (URLs, e-mails and long digit runs left
+  out). Stored in `writing_style` and `writing_corrections` (migration 7).
+  Relearned every `writing_style_relearn_days` (default 7) and from the panel
+  ("Aprender ahora"). MCP tools `get_writing_style`, `save_writing_correction`
+  (called without asking, as the owner asked) and `update_writing_style_notes`
+  (needs `mcp_can_change_settings`). Switch `writing_style_enabled`.
+- eBay sale alerts. Package `internal/ebay` signs in to Microsoft 365 with the
+  device-code flow (owner registers a public-client app in Entra and types its
+  Client ID + tenant in the panel; scopes Mail.Read, Mail.Read.Shared,
+  User.Read, offline_access; no password passes through the program; the
+  refresh token is kept in `mail-token.json` in the data folder, locked to
+  administrators). Every `ebay_poll_minutes` it reads mails from
+  ebay@ebay.com whose subject starts "You made the sale for", parses item,
+  quantity, buyer city/state (name and street are never stored), ship-by
+  date and order number, and sends one grouped WhatsApp notice to
+  `ebay_alert_chat`. A reminder follows `ebay_reminder_minutes` later;
+  reminders that would fall after `ebay_cutoff_time` go at the cutoff
+  (`ebay_timezone`). Only mail received after the alerts were switched on
+  counts; no duplicates by mail ID or order. Texts are templates
+  (`ebay_notice_text`, `ebay_reminder_text`). Sends go through the normal
+  send path (approved list, rate limit, audit) as actor `ebay`.
+  `ebay_alerts_enabled`, `ebay_alert_chat` and `ebay_mailbox` are hand-only.
+- Voice notes: the worker decodes audio itself with PyAV and passes samples
+  to faster-whisper, which fixes "open() got an unexpected keyword argument
+  'metadata_errors'" (faster-whisper 1.2.1 with PyAV 19). The panel shows the
+  NVIDIA driver version, explains an old driver, and has "Probar la tarjeta
+  otra vez".
+- Panel: sections "Mi estilo" and "Avisos eBay"; a clearer message when a
+  one-time login link is opened from another computer.
 
 ## 2.0.6
 
@@ -149,10 +186,10 @@ docs/GUIA.md             user guide (Spanish)
 ## Build
 
 ```
-installer/build.sh 2.0.6     # needs Go, makensis, python3, curl
+installer/build.sh 2.0.7     # needs Go, makensis, python3, curl
 ```
 
-Produces `dist/WhatsAppMCP-Setup-2.0.6.exe` plus macOS binaries for the
+Produces `dist/WhatsAppMCP-Setup-2.0.7.exe` plus macOS binaries for the
 `connect` helper. The installer bundles PostgreSQL 17 for Windows
 (zonky embedded-postgres-binaries, checksum-pinned) and the MSVC runtime DLLs.
 

@@ -27,9 +27,11 @@ import (
 
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/config"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/contacts"
+	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/ebay"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/policy"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/sqlitemigrate"
 	mstore "github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/store"
+	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/style"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/transcribe"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/version"
 	"github.com/fjdt97wwz5-lang/whatsapp-mcp/whatsapp-bridge/internal/wa"
@@ -49,6 +51,8 @@ type Deps struct {
 	Cloud        CloudControl // nil when there is no cloud access
 	Contacts     *contacts.Importer
 	Transcriber  *transcribe.Manager
+	Style        *style.Store
+	Ebay         *ebay.Service
 }
 
 // CloudControl is what the panel can see and do about the cloud access.
@@ -192,7 +196,12 @@ func (p *Panel) linkLogin(w http.ResponseWriter, r *http.Request) {
 		S string `json:"s"`
 	}
 	_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096)).Decode(&body)
-	if !clientIP(r).IsLoopback() || !useLoginLink(r.Context(), p.d.Store.DB, body.T) {
+	if !clientIP(r).IsLoopback() {
+		// The link is only for the server itself; say so instead of "expired".
+		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "target": "/panel/#login-otro-equipo"})
+		return
+	}
+	if !useLoginLink(r.Context(), p.d.Store.DB, body.T) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": false, "target": "/panel/#login-vencido"})
 		return
 	}
@@ -208,7 +217,7 @@ func (p *Panel) linkLogin(w http.ResponseWriter, r *http.Request) {
 
 func validSection(s string) bool {
 	switch s {
-	case "inicio", "vincular", "conversaciones", "contactos", "lista", "ajustes", "registro", "conectar", "importar":
+	case "inicio", "vincular", "conversaciones", "contactos", "lista", "estilo", "ebay", "ajustes", "registro", "conectar", "importar":
 		return true
 	}
 	return false
@@ -327,8 +336,26 @@ func (p *Panel) api(w http.ResponseWriter, r *http.Request, name string) {
 		p.transcribeState(w)
 	case "transcribe/install POST":
 		p.transcribeInstall(ctx, w)
+	case "transcribe/recheck POST":
+		p.transcribeRecheck(ctx, w)
 	case "transcribe/remove POST":
 		p.transcribeRemove(ctx, w)
+	case "style GET":
+		p.styleGet(ctx, w)
+	case "style/learn POST":
+		p.styleLearn(ctx, w)
+	case "style/notes POST":
+		p.styleNotes(ctx, w, r)
+	case "ebay GET":
+		p.ebayGet(ctx, w)
+	case "ebay/connect POST":
+		p.ebayConnect(ctx, w, r)
+	case "ebay/disconnect POST":
+		p.ebayDisconnect(ctx, w)
+	case "ebay/check POST":
+		p.ebayCheck(ctx, w)
+	case "style/corrections/delete POST":
+		p.styleCorrectionDelete(ctx, w, r)
 	case "chats/history POST":
 		p.chatHistory(ctx, w, r)
 	default:

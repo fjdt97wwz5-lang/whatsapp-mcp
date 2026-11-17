@@ -25,8 +25,22 @@
     [/no stored messages in this chat/i, 'Este chat no tiene mensajes guardados desde donde pedir.'],
     [/not a group id/i, 'Eso no es un grupo.'],
     [/no groups chosen yet/i, 'Primero marca los grupos de los que quieres sacar contactos.'],
-    [/forbidden|not-authorized|not in group|item-not-found/i, 'Ya no estás en este grupo o WhatsApp no deja ver sus miembros.']];
-  function esErr(m) { m = String(m || ''); for (var i = 0; i < ES_ERR.length; i++) if (ES_ERR[i][0].test(m)) return ES_ERR[i][1]; return m; }
+    [/forbidden|not-authorized|not in group|item-not-found/i, 'Ya no estás en este grupo o WhatsApp no deja ver sus miembros.'],
+    [/must be between (\d+) and (\d+)/i, 'El número debe estar entre $1 y $2.'],
+    [/ebay_cutoff_time must be/i, 'Escribe la hora así: 17:00.'],
+    [/ebay_timezone must be/i, 'Zona horaria no válida. Ejemplo: America/New_York.'],
+    [/ebay_mailbox must be/i, 'Escribe una dirección de correo o déjalo vacío.'],
+    [/must contain \{ventas\}/i, 'El texto debe llevar {ventas} donde va la lista de ventas.'],
+    [/text is too long/i, 'El texto es muy largo (1000 caracteres como máximo).'],
+    [/only be changed by hand/i, 'Este ajuste solo se cambia a mano en el panel.'],
+    [/not on the approved list/i, 'Ese chat no está en la lista aprobada.'],
+    [/sending is turned off/i, 'El envío de mensajes está apagado en Ajustes.'],
+    [/rate limit reached/i, 'Se llegó al límite de envíos por minuto; se intenta de nuevo.']];
+  function esErr(m) {
+    m = String(m || '');
+    for (var i = 0; i < ES_ERR.length; i++) { var r = ES_ERR[i][0].exec(m); if (r) return ES_ERR[i][1].replace(/\$(\d)/g, function (_, n) { return r[n] || ''; }); }
+    return m;
+  }
   function errTo(el) { return function (e) { if (e.message !== 'login') { var m = esErr(e.message); if (el) $(el).textContent = m; else toast(m); } }; }
   function pad(n) { return n < 10 ? '0' + n : '' + n; }
   function fmtDate(s) {
@@ -125,7 +139,7 @@
   function start() {
     fetch('/panel/api/me', { credentials: 'same-origin' }).then(function (r) { return r.json(); }).then(function (j) {
       if (!j.ok) {
-        showLogin(location.hash === '#login-vencido' ? 'El enlace ya se usó o venció. Ábrelo otra vez desde el menú Inicio del servidor.' : null);
+        showLogin(location.hash === '#login-vencido' ? 'El enlace ya se usó o venció. Ábrelo otra vez desde el menú Inicio del servidor.' : location.hash === '#login-otro-equipo' ? 'Ese enlace solo sirve en el propio servidor. En este equipo entra con la clave de acceso.' : null);
         return;
       }
       CSRF = j.csrf; $('ver').textContent = 'v' + j.version;
@@ -134,7 +148,7 @@
       route();
     }).catch(function () { showLogin('No se pudo conectar con el servicio.'); });
   }
-  var SECTIONS = ['inicio', 'vincular', 'conversaciones', 'contactos', 'lista', 'ajustes', 'registro', 'conectar', 'importar'];
+  var SECTIONS = ['inicio', 'vincular', 'conversaciones', 'contactos', 'lista', 'estilo', 'ebay', 'ajustes', 'registro', 'conectar', 'importar'];
   function route() {
     var s = location.hash.replace('#', '');
     if (SECTIONS.indexOf(s) < 0) s = 'inicio';
@@ -142,8 +156,8 @@
     SECTIONS.forEach(function (x) { show('s-' + x, x === s); });
     document.querySelectorAll('#nav a').forEach(function (a) { a.classList.toggle('on', a.dataset.s === s); });
     if (s !== 'vincular') { clearInterval(timers.pair); timers.pair = null; }
-    ({ inicio: refreshStatus, vincular: loadPair, conversaciones: function () { loadChats(true); }, contactos: loadContactsSection, lista: loadApproved,
-      ajustes: function () { loadSettings(); loadTranscribe(); }, registro: loadAudit, conectar: loadConnection, importar: function () { } })[s]();
+    ({ inicio: refreshStatus, vincular: loadPair, conversaciones: function () { loadChats(true); }, contactos: loadContactsSection, lista: loadApproved, estilo: loadStyle, ebay: loadEbay,
+      ajustes: function () { loadSettings('set-list'); loadTranscribe(); }, registro: loadAudit, conectar: loadConnection, importar: function () { } })[s]();
   }
   window.addEventListener('hashchange', function () { if (!$('app').classList.contains('hidden')) route(); });
 
@@ -356,7 +370,7 @@
     if (!confirm('¿Quitar de la lista aprobada? Claude ya no podrá enviarle mensajes.')) return;
     api('approved/remove', { recipient: b.dataset.jid }).then(function () { toast('Quitado.'); loadApproved(); }).catch(errTo('a-err'));
   });
-  function actorName(a) { return { panel: 'el panel', manual: 'el servidor', claude: 'Claude', cloud: 'Claude (nube)', rest: 'API', installer: 'el instalador', system: 'el sistema' }[a] || a; }
+  function actorName(a) { return { ebay: 'avisos eBay', panel: 'el panel', manual: 'el servidor', claude: 'Claude', cloud: 'Claude (nube)', rest: 'API', installer: 'el instalador', system: 'el sistema' }[a] || a; }
 
   // ---------- settings ----------
   var SET_TEXT = {
@@ -376,37 +390,142 @@
     read_media_max_mb: ['Tamaño máximo para abrir un archivo (MB)', 'Archivos más grandes no se abren para Claude.'],
     transcribe_audio_enabled: ['Transcribir notas de voz', 'Convierte las notas de voz en texto aquí en el servidor. Necesita la transcripción instalada (abajo).'],
     transcribe_language: ['Idioma de las notas de voz', 'Automático detecta español o inglés solo.'],
-    panel_remote: ['Panel desde otros equipos', 'Permite abrir este panel desde otros equipos de tu Tailscale, entrando con la clave. Apagado = solo en este servidor.']
+    panel_remote: ['Panel desde otros equipos', 'Permite abrir este panel desde otros equipos de tu Tailscale, entrando con la clave. Apagado = solo en este servidor.'],
+    writing_style_enabled: ['Usar mi estilo de escritura', 'Claude lee tu estilo antes de redactar un mensaje en tu nombre y guarda solo tus correcciones. Apagado = no lo lee ni lo aprende.'],
+    writing_style_relearn_days: ['Volver a aprender cada (días)', 'Cada cuántos días se vuelve a leer lo que enviaste para actualizar el estilo.'],
+    ebay_alerts_enabled: ['Avisos de ventas de eBay', 'El servidor revisa el correo y manda solo el aviso y el recordatorio por WhatsApp. Necesita la cuenta de Microsoft conectada (arriba) y el chat en la lista aprobada.'],
+    ebay_alert_chat: ['Chat que recibe los avisos', 'Número o chat de WhatsApp (por ahora el chat 4AllFix). Debe estar en la lista aprobada.'],
+    ebay_mailbox: ['Buzón que se revisa', 'Vacío = el buzón de la cuenta conectada. Escribe otra dirección solo si las ventas llegan a un buzón compartido.'],
+    ebay_reminder_minutes: ['Recordatorio después de (minutos)', 'Cuánto después del aviso sale el recordatorio. 0 = sin recordatorio.'],
+    ebay_cutoff_time: ['Hora de salida a USPS (HH:MM)', 'Los recordatorios que caerían después de esta hora salen todos juntos a esta hora.'],
+    ebay_timezone: ['Zona horaria', 'Zona de la hora de salida, por ejemplo America/New_York.'],
+    ebay_poll_minutes: ['Revisar el correo cada (minutos)', 'Cada cuánto se buscan ventas nuevas.'],
+    ebay_notice_text: ['Texto del aviso', 'Escribe {ventas} donde va la lista de ventas.'],
+    ebay_reminder_text: ['Texto del recordatorio', 'Escribe {ventas} donde va la lista y {hora} para la hora de salida.']
   };
-  function loadSettings() {
-    api('settings').then(function (j) {
-      $('set-list').innerHTML = j.settings.map(function (s) {
-        var t = SET_TEXT[s.key] || [s.key, s.description], ctl;
-        if (s.kind === 'bool') ctl = '<label class="switch"><input type="checkbox" data-k="' + s.key + '"' + (s.value ? ' checked' : '') + '><span></span></label>';
-        else if (s.key === 'transcribe_language') ctl = '<select data-k="' + s.key + '" class="s-sel">' + [['auto', 'Automático'], ['es', 'Español'], ['en', 'Inglés']].map(function (o) {
-          return '<option value="' + o[0] + '"' + (s.value === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>';
-        else if (s.kind === 'int') ctl = '<div class="row"><input type="number" min="' + (s.min || '') + '" max="' + (s.max || '') + '" value="' + esc(s.value) + '" data-k="' + s.key + '"><button class="btn sm s-save" data-k="' + s.key + '">Guardar</button></div>';
-        else ctl = '<div class="row"><input class="grow" value="' + esc(s.value) + '" data-k="' + s.key + '"><button class="btn sm s-save" data-k="' + s.key + '">Guardar</button></div>';
-        return '<div class="set"><div><div class="n">' + esc(t[0]) + (s.only_by_hand ? '<span class="lock">Solo a mano</span>' : '') + '</div><div class="muted small">' + esc(t[1]) + '</div></div>' + ctl + '</div>';
-      }).join('');
-    }).catch(errTo());
+  // Settings are shown in three places: Ajustes (general), Estilo (writing_style_*)
+  // and Avisos eBay (ebay_*).
+  var SET_GROUPS = { 'set-list': function (k) { return k.indexOf('ebay_') !== 0 && k.indexOf('writing_style_') !== 0; },
+    'st-set': function (k) { return k.indexOf('writing_style_') === 0; }, 'eb-set': function (k) { return k.indexOf('ebay_') === 0; } };
+  function setControl(s) {
+    if (s.kind === 'bool') return '<label class="switch"><input type="checkbox" data-k="' + s.key + '"' + (s.value ? ' checked' : '') + '><span></span></label>';
+    if (s.key === 'transcribe_language') return '<select data-k="' + s.key + '" class="s-sel">' + [['auto', 'Automático'], ['es', 'Español'], ['en', 'Inglés']].map(function (o) {
+      return '<option value="' + o[0] + '"' + (s.value === o[0] ? ' selected' : '') + '>' + o[1] + '</option>'; }).join('') + '</select>';
+    if (s.kind === 'int') return '<div class="row"><input type="number" min="' + (s.min || '') + '" max="' + (s.max || '') + '" value="' + esc(s.value) + '" data-k="' + s.key + '"><button class="btn sm s-save" data-k="' + s.key + '">Guardar</button></div>';
+    if (/_text$/.test(s.key)) return '<div class="col"><textarea rows="4" maxlength="1000" data-k="' + s.key + '">' + esc(s.value) + '</textarea><button class="btn sm s-save" data-k="' + s.key + '">Guardar</button></div>';
+    return '<div class="row"><input class="grow" value="' + esc(s.value) + '" data-k="' + s.key + '"><button class="btn sm s-save" data-k="' + s.key + '">Guardar</button></div>';
   }
-  function saveSetting(k, v, el) {
-    api('settings', { key: k, value: String(v) }).then(function () { toast('Guardado.'); refreshStatus(); if (k === 'chat_categories') CATS = []; })
-      .catch(function (e) { errTo()(e); loadSettings(); });
+  function paintSettings(id, list) {
+    var keep = SET_GROUPS[id];
+    $(id).innerHTML = list.filter(function (s) { return keep(s.key); }).map(function (s) {
+      var t = SET_TEXT[s.key] || [s.key, s.description];
+      return '<div class="set' + (/_text$/.test(s.key) ? ' wide' : '') + '"><div><div class="n">' + esc(t[0]) + (s.only_by_hand ? '<span class="lock">Solo a mano</span>' : '') + '</div><div class="muted small">' + esc(t[1]) + '</div></div>' + setControl(s) + '</div>';
+    }).join('');
   }
-  $('set-list').addEventListener('change', function (e) {
-    var i = e.target;
-    if (i.classList.contains('s-sel')) { saveSetting(i.dataset.k, i.value, i); return; }
-    if (i.type !== 'checkbox' || !i.dataset.k) return;
-    if (i.dataset.k === 'send_only_to_approved' && !i.checked && !confirm('Si lo apagas, Claude podrá enviar a cualquier número. ¿Seguro?')) { i.checked = true; return; }
-    if (i.dataset.k === 'cloud_access_enabled' && i.checked && !confirm('Claude en la nube podrá leer y enviar (a la lista aprobada) desde internet con la clave de la nube. ¿Activar?')) { i.checked = false; return; }
-    saveSetting(i.dataset.k, i.checked, i);
+  function loadSettings(id) {
+    id = id || 'set-list';
+    return api('settings').then(function (j) { paintSettings(id, j.settings); }).catch(errTo());
+  }
+  function saveSetting(k, v, box) {
+    return api('settings', { key: k, value: String(v) }).then(function () {
+      toast('Guardado.'); refreshStatus(); if (k === 'chat_categories') CATS = [];
+      if (box === 'eb-set') loadEbay(); if (box === 'st-set') loadStyle();
+    }).catch(function (e) { errTo()(e); loadSettings(box); });
+  }
+  Object.keys(SET_GROUPS).forEach(function (id) {
+    $(id).addEventListener('change', function (e) {
+      var i = e.target;
+      if (i.classList.contains('s-sel')) { saveSetting(i.dataset.k, i.value, id); return; }
+      if (i.type !== 'checkbox' || !i.dataset.k) return;
+      if (i.dataset.k === 'send_only_to_approved' && !i.checked && !confirm('Si lo apagas, Claude podrá enviar a cualquier número. ¿Seguro?')) { i.checked = true; return; }
+      if (i.dataset.k === 'cloud_access_enabled' && i.checked && !confirm('Claude en la nube podrá leer y enviar (a la lista aprobada) desde internet con la clave de la nube. ¿Activar?')) { i.checked = false; return; }
+      if (i.dataset.k === 'ebay_alerts_enabled' && i.checked && !confirm('El servidor mandará solo, sin preguntarte, un aviso por WhatsApp por cada venta nueva de eBay y el recordatorio, al chat de abajo. Solo cuentan las ventas que lleguen desde ahora. ¿Encender?')) { i.checked = false; return; }
+      saveSetting(i.dataset.k, i.checked, id);
+    });
+    $(id).addEventListener('click', function (e) {
+      var b = e.target.closest('.s-save'); if (!b) return;
+      var i = $(id).querySelector('[data-k="' + b.dataset.k + '"]:not(button)');
+      saveSetting(b.dataset.k, i.value, id);
+    });
   });
-  $('set-list').addEventListener('click', function (e) {
-    var b = e.target.closest('.s-save'); if (!b) return;
-    var i = $('set-list').querySelector('input[data-k="' + b.dataset.k + '"]');
-    saveSetting(b.dataset.k, i.value, i);
+
+  // ---------- writing style ----------
+  function loadStyle() {
+    $('st-err').textContent = '';
+    loadSettings('st-set');
+    api('style').then(function (j) {
+      var st = j.style || {}, p = st.profile || null;
+      $('st-kv').innerHTML = '<dt>Aprendido</dt><dd>' + (st.learned_at ? esc(fmtDate(st.learned_at)) + ' (' + (st.messages_used || 0) + ' mensajes tuyos)' : 'Todavía no') + '</dd>' +
+        '<dt>Se vuelve a aprender</dt><dd>cada ' + esc(j.relearn_days) + ' días' + (j.enabled ? '' : ' (apagado)') + '</dd>';
+      $('st-summary').innerHTML = (st.summary || []).map(function (l) { return '<li>' + esc(l) + '</li>'; }).join('') || '<li class="muted">Pulsa Aprender ahora para leer tus mensajes enviados.</li>';
+      var ex = (p && p.examples) || [];
+      $('st-examples').innerHTML = ex.map(function (e) { return '<li>' + esc(e) + '</li>'; }).join('') || '<li class="muted">Sin ejemplos todavía.</li>';
+      if (document.activeElement !== $('st-notes')) $('st-notes').value = st.notes || '';
+      var cs = st.corrections || [];
+      $('st-corr').innerHTML = cs.map(function (c) {
+        return '<div class="item"><div><div class="muted small">' + esc(fmtDate(c.at)) + (c.actor === 'panel' ? '' : ' · ' + esc(actorName(c.actor))) + (c.chat ? ' · ' + esc(c.chat) : '') + '</div>' +
+          (c.draft ? '<div class="small"><s>' + esc(c.draft) + '</s></div>' : '') + '<div>' + esc(c.final) + '</div>' + (c.note ? '<div class="muted small">' + esc(c.note) + '</div>' : '') + '</div>' +
+          '<div class="acts"><button class="btn sm danger st-del" data-id="' + c.id + '">Borrar</button></div></div>';
+      }).join('') || '<p class="muted">Ninguna todavía. Cuando cambies un borrador de Claude antes de enviarlo, Claude guarda aquí cómo lo dejaste.</p>';
+    }).catch(errTo('st-err'));
+  }
+  $('st-learn').addEventListener('click', function () {
+    var b = this; b.disabled = true; b.textContent = 'Aprendiendo…';
+    api('style/learn', {}).then(function () { toast('Estilo aprendido.'); loadStyle(); }).catch(errTo('st-err'))
+      .then(function () { b.disabled = false; b.textContent = 'Aprender ahora'; });
+  });
+  $('st-notes-save').addEventListener('click', function () {
+    api('style/notes', { notes: $('st-notes').value }).then(function () { toast('Notas guardadas.'); }).catch(errTo('st-err'));
+  });
+  $('st-corr').addEventListener('click', function (e) {
+    var b = e.target.closest('.st-del'); if (!b) return;
+    if (!confirm('¿Borrar esta corrección? Claude ya no la tendrá en cuenta.')) return;
+    api('style/corrections/delete', { id: Number(b.dataset.id) }).then(function () { toast('Borrada.'); loadStyle(); }).catch(errTo('st-err'));
+  });
+
+  // ---------- eBay sale alerts ----------
+  function loadEbay() {
+    clearTimeout(timers.ebay);
+    loadSettings('eb-set');
+    api('ebay').then(function (j) {
+      var st = j.status || {};
+      show('eb-form', !st.connected && !st.device);
+      show('eb-code', !!st.device);
+      show('eb-disc', st.connected); show('eb-check', st.connected);
+      if (document.activeElement !== $('eb-client') && !$('eb-client').value) $('eb-client').value = st.client_id || '';
+      if (document.activeElement !== $('eb-tenant') && !$('eb-tenant').value) $('eb-tenant').value = st.tenant || '4allfix.com';
+      if (st.device) {
+        $('eb-ucode').textContent = st.device.user_code;
+        $('eb-uri').textContent = st.device.verification_uri;
+      }
+      $('eb-kv').innerHTML = '<dt>Cuenta de Microsoft</dt><dd>' + (st.connected ? esc(st.account || 'conectada') : 'No conectada') + '</dd>' +
+        '<dt>Última revisión del correo</dt><dd>' + (st.last_poll ? esc(fmtDate(st.last_poll)) : '—') + '</dd>' +
+        (st.watch_since ? '<dt>Cuenta ventas desde</dt><dd>' + esc(fmtDate(st.watch_since)) + '</dd>' : '') +
+        (st.last_error ? '<dt>Problema</dt><dd class="err">' + esc(st.last_error) + '</dd>' : '');
+      $('eb-err').textContent = st.device_error || '';
+      $('eb-prev-n').textContent = j.preview_notice || '';
+      $('eb-prev-r').textContent = j.preview_reminder || '';
+      $('eb-sales').innerHTML = (st.sales || []).map(function (s) {
+        var state = s.notify_error && !s.notified_at ? '<span class="o-error">Aviso falló: ' + esc(esErr(s.notify_error)) + '</span>' :
+          s.reminded_at ? 'Avisada ' + esc(fmtDate(s.notified_at)) + ', recordada ' + esc(fmtDate(s.reminded_at)) :
+          s.notified_at ? 'Avisada ' + esc(fmtDate(s.notified_at)) + (s.remind_due ? ', recordatorio ' + esc(fmtDate(s.remind_due)) : '') + (s.remind_error ? ' <span class="o-error">(' + esc(esErr(s.remind_error)) + ')</span>' : '') : 'Pendiente';
+        return '<tr><td>' + esc(fmtDate(s.received_at)) + '</td><td>' + esc(s.item) + '</td><td>' + esc(s.quantity) + '</td><td>' + esc(s.place) + '</td><td>' + esc(s.ship_by) + '</td><td>' + state + '</td></tr>';
+      }).join('') || '<tr><td colspan="6" class="muted">Ninguna venta todavía.</td></tr>';
+      if (st.device && cur === 'ebay') timers.ebay = setTimeout(loadEbay, 3000);
+    }).catch(errTo('eb-err'));
+  }
+  $('eb-form').addEventListener('submit', function (e) {
+    e.preventDefault(); $('eb-err').textContent = '';
+    var b = $('eb-connect'); b.disabled = true;
+    api('ebay/connect', { client_id: $('eb-client').value.trim(), tenant: $('eb-tenant').value.trim() }).then(function () { loadEbay(); })
+      .catch(errTo('eb-err')).then(function () { b.disabled = false; });
+  });
+  $('eb-disc').addEventListener('click', function () {
+    if (!confirm('Se borra el permiso guardado y el servidor deja de leer el correo. ¿Desconectar?')) return;
+    api('ebay/disconnect', {}).then(function () { toast('Desconectado.'); $('eb-client').value = ''; loadEbay(); }).catch(errTo('eb-err'));
+  });
+  $('eb-check').addEventListener('click', function () {
+    api('ebay/check', {}).then(function () { toast('Revisando el correo. Si los avisos están apagados, no se revisa.'); setTimeout(loadEbay, 4000); }).catch(errTo('eb-err'));
   });
 
   // ---------- contacts from groups ----------
@@ -525,10 +644,12 @@
         if (t.installing && t.step) rows.push(['Paso', t.step]);
         if (t.installed) rows.push(['Funciona con', t.device === 'cuda' ? 'Tarjeta gráfica NVIDIA (rápido)' : 'Procesador (más lento)']);
         if (t.installed && t.device !== 'cuda' && t.detail) rows.push(['Por qué no la tarjeta', t.detail]);
+        if (t.installed && t.driver) rows.push(['Tarjeta y driver', t.driver]);
         rows.push(['Modelo', t.model || '']);
         show('tr-bar', t.installing); $('tr-fill').style.width = (t.percent || 0) + '%';
         show('tr-install', !t.installing); $('tr-install').textContent = t.installed ? 'Instalar otra vez' : 'Instalar transcripción';
         show('tr-remove', t.installed && !t.installing);
+        show('tr-recheck', t.installed && !t.installing && t.device !== 'cuda');
         $('tr-err').textContent = t.error || '';
         if (t.installing && cur === 'ajustes') trTimer = setTimeout(loadTranscribe, 2000);
       }
@@ -538,6 +659,12 @@
   $('tr-install').addEventListener('click', function () {
     if (!confirm('Se descargan unos 3 GB en este servidor. Puede tardar un buen rato. ¿Empezar?')) return;
     api('transcribe/install', {}).then(function () { toast('Instalando. Puedes seguir usando el panel.'); loadTranscribe(); }).catch(errTo('tr-err'));
+  });
+  $('tr-recheck').addEventListener('click', function () {
+    var b = this; b.disabled = true; b.textContent = 'Probando… (puede tardar un par de minutos)';
+    api('transcribe/recheck', {}).then(function (j) {
+      toast((j.state || {}).device === 'cuda' ? 'Ahora funciona con la tarjeta NVIDIA.' : 'La tarjeta todavía no se puede usar; sigue con el procesador.');
+    }).catch(errTo('tr-err')).then(function () { b.disabled = false; b.textContent = 'Probar la tarjeta otra vez'; loadTranscribe(); });
   });
   $('tr-remove').addEventListener('click', function () {
     if (!confirm('¿Quitar la transcripción? Se borran Python, las librerías y el modelo (unos 3 GB). Las notas ya transcritas se quedan.')) return;
@@ -551,7 +678,10 @@
     'panel.login': 'Entrada al panel', 'panel.show_key': 'Clave mostrada', 'history.import': 'Historial importado', 'cloud.request': 'Acceso desde la nube',
     'cloud.denied': 'Nube: clave incorrecta', 'contacts.import': 'Contactos importados', 'contacts.group_add': 'Grupo elegido para contactos',
     'contacts.group_remove': 'Grupo quitado de contactos', 'contact.edit': 'Contacto editado', 'contact.remove': 'Contacto borrado', 'group.members': 'Miembros de un grupo',
-    'media.read': 'Archivo abierto por Claude', 'history.request': 'Mensajes pedidos otra vez', 'transcribe.install': 'Instalación de transcripción', 'transcribe.remove': 'Transcripción quitada', 'cloud.funnel_on': 'Funnel publicado', 'cloud.funnel_off': 'Funnel quitado', 'cloud.key_rotated': 'Clave de la nube cambiada', 'auth.denied': 'Acceso rechazado'
+    'media.read': 'Archivo abierto por Claude', 'history.request': 'Mensajes pedidos otra vez', 'transcribe.install': 'Instalación de transcripción', 'transcribe.remove': 'Transcripción quitada', 'transcribe.recheck': 'Tarjeta probada otra vez', 'cloud.funnel_on': 'Funnel publicado', 'cloud.funnel_off': 'Funnel quitado', 'cloud.key_rotated': 'Clave de la nube cambiada', 'auth.denied': 'Acceso rechazado',
+    'style.learn': 'Estilo aprendido', 'style.notes': 'Notas de estilo cambiadas', 'style.correction': 'Corrección de estilo guardada', 'style.correction_delete': 'Corrección de estilo borrada',
+    'ebay.connect_start': 'Conexión con Microsoft iniciada', 'ebay.connect': 'Conexión con Microsoft', 'ebay.disconnect': 'Cuenta de Microsoft desconectada', 'ebay.sale': 'Venta de eBay recibida',
+    'ebay.notice': 'Aviso de venta de eBay', 'ebay.reminder': 'Recordatorio de venta de eBay', 'ebay.poll_error': 'Problema al leer el correo'
   };
   function loadAudit() {
     var f = $('r-filter').value;
@@ -564,6 +694,9 @@
           else if (a.details.new_name || a.details.new_country) det = [a.details.new_name ? 'nombre ' + (a.details.old_name || '—') + ' → ' + a.details.new_name : '', a.details.new_country !== undefined ? 'país ' + (a.details.old_country || '—') + ' → ' + (a.details.new_country || '—') : ''].filter(Boolean).join(', ');
           else if (a.action === 'contacts.import') det = a.details.groups + ' grupos: ' + a.details.new + ' nuevos, ' + a.details.updated + ' actualizados, ' + a.details.approved + ' a la lista aprobada';
           else if (a.details.error) det = a.details.error;
+          else if (a.details.sales) det = a.details.sales === 1 ? '1 venta' : a.details.sales + ' ventas';
+          else if (a.action === 'ebay.sale') det = (a.details.item || '') + (a.details.place ? ', ' + a.details.place : '');
+          else if (a.action === 'style.learn' && a.details.messages) det = a.details.messages + ' mensajes';
         }
         return '<tr><td>' + esc(fmtDate(a.at)) + '</td><td>' + esc(actorName(a.actor)) + '</td><td>' + esc(ACTION_TEXT[a.action] || a.action) + (det ? '<div class="muted small">' + esc(det) + '</div>' : '') +
           '</td><td>' + esc(a.target) + '</td><td class="o-' + esc(a.outcome) + '">' + esc({ ok: 'Bien', denied: 'Rechazado', error: 'Error' }[a.outcome] || a.outcome) + '</td></tr>';

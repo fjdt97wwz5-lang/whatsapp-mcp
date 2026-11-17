@@ -28,6 +28,8 @@
       <a href="#conversaciones" data-s="conversaciones"><i class="ic ic-chat"></i><span>Conversaciones</span></a>
       <a href="#contactos" data-s="contactos"><i class="ic ic-people"></i><span>Contactos</span></a>
       <a href="#lista" data-s="lista"><i class="ic ic-check"></i><span>Lista aprobada</span></a>
+      <a href="#estilo" data-s="estilo"><i class="ic ic-pen"></i><span>Mi estilo</span></a>
+      <a href="#ebay" data-s="ebay"><i class="ic ic-box"></i><span>Avisos eBay</span></a>
       <a href="#ajustes" data-s="ajustes"><i class="ic ic-gear"></i><span>Ajustes</span></a>
       <a href="#registro" data-s="registro"><i class="ic ic-log"></i><span>Registro</span></a>
       <a href="#conectar" data-s="conectar"><i class="ic ic-plug"></i><span>Conectar Claude</span></a>
@@ -136,6 +138,65 @@
       </div>
     </section>
 
+    <section id="s-estilo" class="sec hidden">
+      <div class="card">
+        <h3>Mi estilo de escritura</h3>
+        <p class="muted">Se aprende de los mensajes que tú enviaste por WhatsApp (no de los que mandan Claude ni los avisos automáticos). Claude lo lee antes de redactar un mensaje en tu nombre. Se guarda solo en la base de datos de este servidor.</p>
+        <dl class="kv" id="st-kv"></dl>
+        <ul id="st-summary"></ul>
+        <p class="row wrap"><button class="btn primary" id="st-learn">Aprender ahora</button></p>
+        <p class="err" id="st-err"></p>
+      </div>
+      <div class="card"><div id="st-set"></div></div>
+      <div class="card">
+        <h3>Notas para Claude</h3>
+        <p class="muted">Lo que quieras que Claude tenga siempre en cuenta al escribir por ti (por ejemplo: "a los clientes nuevos les hablo de usted").</p>
+        <textarea id="st-notes" rows="5" maxlength="4000"></textarea>
+        <p><button class="btn sm" id="st-notes-save">Guardar notas</button></p>
+      </div>
+      <div class="card">
+        <h3>Correcciones guardadas</h3>
+        <div id="st-corr"></div>
+      </div>
+      <div class="card">
+        <h3>Ejemplos de tus mensajes</h3>
+        <p class="muted small">Sin enlaces, correos ni números largos.</p>
+        <ul id="st-examples"></ul>
+      </div>
+    </section>
+
+    <section id="s-ebay" class="sec hidden">
+      <div class="card">
+        <h3>Avisos de ventas de eBay</h3>
+        <p class="muted">El servidor revisa tu correo de Microsoft 365. Por cada correo "You made the sale for…" de ebay@ebay.com manda un aviso por WhatsApp y, más tarde, un recordatorio. Solo lee el correo: no puede enviar ni borrar correos.</p>
+        <dl class="kv" id="eb-kv"></dl>
+        <form id="eb-form" class="hidden" autocomplete="off">
+          <p class="muted small">Primero registra la aplicación en Microsoft Entra (pasos en GUIA.md) y copia aquí sus datos. No se escribe ninguna contraseña aquí.</p>
+          <label class="field"><span>ID de la aplicación (Client ID)</span><input id="eb-client" placeholder="00000000-0000-0000-0000-000000000000" spellcheck="false"></label>
+          <label class="field"><span>Inquilino (tu dominio)</span><input id="eb-tenant" placeholder="4allfix.com" spellcheck="false"></label>
+          <button class="btn primary" id="eb-connect" type="submit">Conectar con Microsoft</button>
+        </form>
+        <div id="eb-code" class="hidden">
+          <p>En cualquier equipo o teléfono abre <b id="eb-uri"></b>, escribe este código y entra con tu cuenta de Microsoft (la que recibe los correos de eBay):</p>
+          <p class="code-big" id="eb-ucode"></p>
+          <p class="muted small">Esta página se actualiza sola cuando termines.</p>
+        </div>
+        <p class="row wrap"><button class="btn hidden" id="eb-check">Revisar el correo ahora</button><button class="btn danger hidden" id="eb-disc">Desconectar Microsoft</button></p>
+        <p class="err" id="eb-err"></p>
+      </div>
+      <div class="card"><div id="eb-set"></div></div>
+      <div class="card">
+        <h3>Así se verán los mensajes</h3>
+        <p class="muted small">Con la venta más reciente, o un ejemplo si todavía no hay.</p>
+        <pre class="prev" id="eb-prev-n"></pre>
+        <pre class="prev" id="eb-prev-r"></pre>
+      </div>
+      <div class="card">
+        <h3>Ventas recientes</h3>
+        <div class="table-wrap"><table class="tbl"><thead><tr><th>Llegó</th><th>Producto</th><th>Cant.</th><th>Para</th><th>Enviar antes de</th><th>Estado</th></tr></thead><tbody id="eb-sales"></tbody></table></div>
+      </div>
+    </section>
+
     <section id="s-ajustes" class="sec hidden">
       <div class="card"><div id="set-list"></div></div>
       <div class="card">
@@ -144,7 +205,7 @@
         <p class="muted small">La primera vez descarga unos 3 GB: Python (nuget.org), las librerías (pypi.org) y el modelo de voz (Hugging Face). Cada archivo se comprueba antes de usarlo.</p>
         <dl class="kv" id="tr-kv"></dl>
         <div class="bar hidden" id="tr-bar"><span id="tr-fill"></span></div>
-        <p class="row wrap"><button class="btn primary" id="tr-install">Instalar transcripción</button><button class="btn danger hidden" id="tr-remove">Quitar transcripción</button></p>
+        <p class="row wrap"><button class="btn primary" id="tr-install">Instalar transcripción</button><button class="btn hidden" id="tr-recheck">Probar la tarjeta otra vez</button><button class="btn danger hidden" id="tr-remove">Quitar transcripción</button></p>
         <p class="err" id="tr-err"></p>
       </div>
     </section>
